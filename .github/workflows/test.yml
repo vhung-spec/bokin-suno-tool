@@ -1,9 +1,17 @@
 # Tests Lời Đồng Âm on a fresh Windows and a fresh Linux: the engine with Node, then the page opened from disk in
 # Chromium and used like a person would, then the one-file build for Claude.
-name: Bokin Suno Tool
+name: Loi Dong Am
 
 on:
   push:
+    paths:
+      - "loi-dong-am/**"
+      - "tests/engine.test.js"
+      - "tests/page.test.js"
+      - "tools/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/test.yml"
   workflow_dispatch:
 
 permissions:
