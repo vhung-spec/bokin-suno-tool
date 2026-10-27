@@ -57,7 +57,8 @@ test('the page works from disk', async t => {
   await t.test('copy puts the rewritten lyrics on the clipboard', async () => {
     await page.click('#copy');
     await page.waitForFunction(() => document.querySelector('#status').textContent === 'Đã chép');
-    const copied = await page.evaluate(() => navigator.clipboard.readText());
+    // Windows keeps line breaks on the clipboard as \r\n.
+    const copied = (await page.evaluate(() => navigator.clipboard.readText())).replace(/\r\n/g, '\n');
     assert.match(copied, /^\[Chorus\]\n/);
     assert.doesNotMatch(copied, /Silent night/);
   });
