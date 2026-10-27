@@ -129,7 +129,115 @@ rough:ruff;turn:tern;horse:hoarse`;
     return out === word ? null : out;
   }
 
-  // Candidates for one lower-case word: [{text, kind}] where kind is custom | homo | respell | rule.
+  // Syllables: the TeX US English patterns (hyphen-en-us.js) find the safe breaks (dash|ing, jin|gle, heav|en|ly);
+  // they leave some open syllables joined, so a vowel-based pass splits those (o|pen, to|night, si|lent).
+  const HYPH = typeof HYPHEN_EN_US !== 'undefined' ? HYPHEN_EN_US
+    : typeof require === 'function' ? require('./hyphen-en-us.js') : null;
+  let PATTERNS = null, EXCEPTIONS = null, MAX_PATTERN = 0;
+
+  function loadPatterns() {
+    PATTERNS = new Map();
+    for (const p of HYPH.patterns.trim().split(/\s+/)) {
+      const letters = p.replace(/\d/g, '');
+      const points = new Array(letters.length + 1).fill(0);
+      let k = 0;
+      for (const ch of p) {
+        if (ch >= '0' && ch <= '9') points[k] = Number(ch);
+        else k++;
+      }
+      PATTERNS.set(letters, points);
+      MAX_PATTERN = Math.max(MAX_PATTERN, letters.length);
+    }
+    EXCEPTIONS = new Map(HYPH.exceptions.trim().split(/\s+/).map(e => [e.replace(/-/g, ''), e.split('-')]));
+  }
+
+  // Liang's algorithm, breaking no closer than two letters to either edge.
+  function texSyllables(word) {
+    if (!PATTERNS) loadPatterns();
+    if (EXCEPTIONS.has(word)) return EXCEPTIONS.get(word);
+    const w = `.${word}.`;
+    const points = new Array(w.length + 1).fill(0);
+    for (let i = 0; i < w.length; i++) {
+      for (let j = i + 1; j <= Math.min(w.length, i + MAX_PATTERN); j++) {
+        const found = PATTERNS.get(w.slice(i, j));
+        if (found) found.forEach((v, k) => { if (v > points[i + k]) points[i + k] = v; });
+      }
+    }
+    const pieces = [];
+    let last = 0;
+    for (let i = 2; i <= word.length - 2; i++) {
+      if (points[i + 1] % 2) { pieces.push(word.slice(last, i)); last = i; }
+    }
+    pieces.push(word.slice(last));
+    return pieces;
+  }
+
+  const isVowelAt = (p, i) => {
+    const c = p[i], next = p[i + 1] || '';
+    if (c === 'u' && p[i - 1] === 'q') return false;
+    return 'aeiou'.includes(c) || (c === 'y' && i > 0 && !(next && 'aeiou'.includes(next)));
+  };
+  // Spans of sung vowels in a piece; a silent final e (make, loved, makes) is not one, a syllabic "-le" is.
+  function vowelSpans(p) {
+    const spans = [];
+    for (let i = 0; i < p.length; i++) {
+      if (!isVowelAt(p, i)) continue;
+      const start = i;
+      while (i + 1 < p.length && isVowelAt(p, i + 1)) i++;
+      spans.push([start, i + 1]);
+    }
+    const lastSpan = spans[spans.length - 1];
+    if (spans.length > 1 && lastSpan[1] - lastSpan[0] === 1 && p[lastSpan[0]] === 'e') {
+      const tail = p.slice(lastSpan[0]);
+      const before = p.slice(0, lastSpan[0]);
+      const silent = (tail === 'e' && !/[^aeiouy]l$/.test(before))
+        || (tail === 'es' && !/(s|x|z|ch|sh|[cg])$/.test(before))
+        || (tail === 'ed' && !/[td]$/.test(before));
+      if (silent) spans.pop();
+    }
+    return spans;
+  }
+
+  const DIGRAPH_BEFORE = /^(th|sh|ch|ph|wh)$/;
+  const DIGRAPH_AFTER = /^(ck|ng|gh)$/;
+  function vowelSyllables(p) {
+    const spans = vowelSpans(p);
+    if (spans.length < 2) return [p];
+    const cuts = [];
+    for (let k = 1; k < spans.length; k++) {
+      const from = spans[k - 1][1], to = spans[k][0];
+      const between = p.slice(from, to);
+      if (!between) continue;
+      if (between.length === 1) cuts.push(between === 'x' ? to : from);
+      else if (DIGRAPH_BEFORE.test(between)) cuts.push(from);
+      else if (DIGRAPH_AFTER.test(between)) cuts.push(to);
+      else cuts.push(from + (DIGRAPH_BEFORE.test(between.slice(0, 2)) || DIGRAPH_AFTER.test(between.slice(0, 2)) ? 2 : 1));
+    }
+    const pieces = [];
+    let last = 0;
+    for (const c of cuts) { pieces.push(p.slice(last, c)); last = c; }
+    pieces.push(p.slice(last));
+    return pieces;
+  }
+
+  function syllables(word) {
+    if (!HYPH || word.length < 3 || !/^[a-z]+$/.test(word)) return [word];
+    // Every piece must be sung: one without a vowel joins its neighbour.
+    return texSyllables(word).flatMap(vowelSyllables).reduce((out, piece) => {
+      if (!/[aeiouy]/.test(piece) && out.length) out[out.length - 1] += piece;
+      else if (out.length && !/[aeiouy]/.test(out[out.length - 1])) out[out.length - 1] += piece;
+      else out.push(piece);
+      return out;
+    }, []);
+  }
+
+  const splitSpelling = word => {
+    const s = syllables(word);
+    return s.length > 1 ? s.join(' ') : null;
+  };
+
+  // Candidates for one lower-case word: [{text, kind}] where kind is custom | homo | respell | rule | split.
+  // opts.method: 'respell' (spell by sound, the default), 'space' (split syllables with spaces) or 'both'.
   function candidates(word, opts) {
     const key = word.replace(/’/g, "'");
     const list = [];
@@ -139,12 +247,16 @@ rough:ruff;turn:tern;horse:hoarse`;
     const custom = opts.custom && opts.custom.get(key);
     if (custom && custom.toLowerCase() === key) return list; // the user wants this word kept
     if (custom) add(custom, 'custom');
-    if (opts.homophones) (HOMO.get(key) || []).forEach(t => add(t, 'homo'));
-    (RESPELL.get(key) || []).forEach(t => add(t, 'respell'));
-    if (!RESPELL.has(key)) add(ruleSpelling(key), 'rule');
-    // summer's -> summur's: respell the part before a short ending.
+    const method = opts.method || 'respell';
+    if (method !== 'space') {
+      if (opts.homophones) (HOMO.get(key) || []).forEach(t => add(t, 'homo'));
+      (RESPELL.get(key) || []).forEach(t => add(t, 'respell'));
+      if (!RESPELL.has(key)) add(ruleSpelling(key), 'rule');
+    }
+    if (method !== 'respell') add(splitSpelling(key), 'split');
+    // summer's -> summur's: change the part before a short ending.
     const m = !list.length && key.match(/^([a-z]+)('s|'ll|'d|'ve|'re)$/);
-    if (m) candidates(m[1], { homophones: false }).forEach(c => add(c.text + m[2], c.kind));
+    if (m) candidates(m[1], { method, homophones: false }).forEach(c => add(c.text + m[2], c.kind));
     return list;
   }
 
@@ -164,7 +276,10 @@ rough:ruff;turn:tern;horse:hoarse`;
       const parts = [];
       let last = 0;
       for (const m of line.matchAll(WORD)) {
-        if (m.index > last) parts.push({ s: line.slice(last, m.index) });
+        let between = line.slice(last, m.index);
+        // one-horse -> one horse, so the split syllables read the same way
+        if (between === '-' && parts.length && opts.method && opts.method !== 'respell') between = ' ';
+        if (between) parts.push({ s: between });
         const lower = m[0].toLowerCase();
         parts.push({ w: m[0], alts: candidates(lower, opts), pick: -1 });
         last = m.index + m[0].length;
@@ -175,7 +290,7 @@ rough:ruff;turn:tern;horse:hoarse`;
   }
 
   const LEVELS = { light: 4, medium: 2, strong: 0 };
-  const KIND_SCORE = { custom: 40, homo: 30, respell: 30, rule: 20 };
+  const KIND_SCORE = { custom: 40, homo: 30, respell: 30, split: 25, rule: 20 };
 
   function rng(seed) {
     let s = (seed * 2654435761) >>> 0 || 1;
@@ -244,6 +359,6 @@ rough:ruff;turn:tern;horse:hoarse`;
     return map;
   }
 
-  return { analyse, plan, toText, stats, shown, applyCase, parseCustom, ruleSpelling, LEVELS };
+  return { analyse, plan, toText, stats, shown, applyCase, parseCustom, ruleSpelling, syllables, LEVELS };
 })();
 if (typeof module !== 'undefined') module.exports = Respell;

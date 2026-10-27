@@ -30,8 +30,8 @@ It rained all night the day I left, the weather it was dry
 The sun so hot I froze to death, Susanna, don't you cry`,
 };
 
-const run = (text, { level = 'medium', homophones = true, seed = 0, custom = '' } = {}) => {
-  const lines = Respell.analyse(text, { homophones, custom: Respell.parseCustom(custom) });
+const run = (text, { method = 'respell', level = 'medium', homophones = true, seed = 0, custom = '' } = {}) => {
+  const lines = Respell.analyse(text, { method, homophones, custom: Respell.parseCustom(custom) });
   Respell.plan(lines, level, seed);
   return { lines, text: Respell.toText(lines), stats: Respell.stats(lines) };
 };
@@ -120,4 +120,69 @@ test('copes with empty text and odd characters', () => {
   assert.equal(run('\n\n').text, '\n\n');
   const odd = 'Don’t <b>cry</b> & 123 — “sing”';
   assert.equal(run(odd, { level: 'strong' }).text.replace(/[A-Za-z’]/g, ''), odd.replace(/[A-Za-z’]/g, ''));
+});
+
+const JINGLE = `[Verse 1]
+Dashing through the snow
+In a one-horse open sleigh
+O'er the fields we go
+Laughing all the way
+
+Bells on bob tails ring
+Making spirits bright
+What fun it is to ride and sing
+A sleighing song tonight!
+
+[Chorus]
+Jingle bells, jingle bells
+Jingle all the way!
+Oh, what fun it is to ride
+In a one-horse open sleigh!`;
+
+test('"space" splits syllables like the owner\'s example', () => {
+  const { text } = run(JINGLE, { method: 'space', level: 'strong' });
+  assert.equal(text, `[Verse 1]
+Dash ing through the snow
+In a one horse o pen sleigh
+O'er the fields we go
+Laugh ing all the way
+
+Bells on bob tails ring
+Mak ing spir its bright
+What fun it is to ride and sing
+A sleigh ing song to night!
+
+[Chorus]
+Jin gle bells, jin gle bells
+Jin gle all the way!
+Oh, what fun it is to ride
+In a one horse o pen sleigh!`);
+});
+
+test('syllables are split where they are sung', () => {
+  const expected = {
+    open: 'o pen', tonight: 'to night', silent: 'si lent', holy: 'ho ly', amazing: 'a maz ing', jingle: 'jin gle',
+    heavenly: 'heav en ly', precious: 'pre cious', mother: 'moth er', children: 'chil dren', table: 'ta ble',
+    places: 'pla ces', wanted: 'want ed', beyond: 'be yond', christmas: 'christ mas', shepherds: 'shep herds',
+  };
+  for (const [word, split] of Object.entries(expected)) assert.equal(Respell.syllables(word).join(' '), split, word);
+  for (const word of 'snow sing through sleigh fire hour makes loved eyes queen strength rhythm the'.split(' ')) {
+    assert.deepEqual(Respell.syllables(word), [word], `${word} is one syllable`);
+  }
+  const words = Object.values(SONGS).join(' ').concat(' ', JINGLE).toLowerCase().match(/[a-z]+/g);
+  for (const word of new Set(words.filter(w => /[aeiouy]/.test(w)))) {
+    const pieces = Respell.syllables(word);
+    assert.equal(pieces.join(''), word);
+    pieces.forEach(p => assert.match(p, /[aeiouy]/, `${word}: every piece has a vowel (${pieces.join(' ')})`));
+  }
+});
+
+test('"space" only adds spaces, "both" mixes the two', () => {
+  const space = run(SONGS.amazing, { method: 'space', level: 'strong' }).text;
+  assert.equal(space.replace(/ /g, ''), SONGS.amazing.replace(/ /g, ''));
+  assert.match(run("the summer's gone", { method: 'space', level: 'strong' }).text, /sum mer's/);
+  const both = run(JINGLE, { method: 'both', level: 'strong' }).text;
+  assert.match(both, /Dash ing/);
+  assert.match(both, /Laffing/);
+  assert.match(run('one-horse', { method: 'respell', level: 'light' }).text, /-/);
 });

@@ -4,9 +4,10 @@
 `docs/tong-quan-he-thong.md`.
 
 ## Repo
-- `loi-dong-am/` trang **Lời Đồng Âm**: viết lại lời tiếng Anh theo cách đọc để dán vào Suno. Chạy hoàn toàn trên
-  trình duyệt, mở thẳng từ ổ đĩa, không máy chủ. `engine.js` (danh sách viết theo âm, từ đồng âm, quy tắc chính tả,
-  chọn từ cần đổi), `index.html` (giao diện, nạp `engine.js`).
+- `loi-dong-am/` trang **Lời Đồng Âm**: đổi lời tiếng Anh để dán vào Suno, hai cách: viết theo âm và thêm khoảng
+  trống (tách âm tiết). Chạy hoàn toàn trên trình duyệt, mở thẳng từ ổ đĩa, không máy chủ. `engine.js` (danh sách viết
+  theo âm, từ đồng âm, quy tắc chính tả, tách âm tiết, chọn từ cần đổi), `hyphen-en-us.js` (bộ quy tắc tách chữ TeX,
+  giữ nguyên dòng bản quyền), `index.html` (giao diện, nạp hai file trên).
 - `tests/engine.test.js` bài thử bộ đổi chữ (Node), `tests/page.test.js` bài thử trang trong Chromium (Playwright).
 - `tools/build-artifact.js` gộp trang thành `dist/loi-dong-am.html` để đăng lên Claude. Bản đang đăng:
   https://claude.ai/artifact/EQoBSTcU3A4SiS4ygvMUfC (sửa trang thì build lại rồi đăng vào đúng link này).
@@ -18,6 +19,8 @@
 - Trả lời chủ dự án bằng **tiếng Việt**, đơn giản, từng bước. Mã và chú thích trong mã bằng tiếng Anh.
 - Mỗi cách viết lại phải được hát **y như từ gốc**. Thêm từ hoặc quy tắc thì chạy quy tắc trên vài nghìn từ thông dụng,
   xem kết quả, đưa từ bị đọc sai vào `NO_RULES` và vào bài thử "never offers a spelling that is sung differently".
+- Tách âm tiết phải ra đúng ví dụ của chủ (bài thử *"space" splits syllables like the owner's example*): mỗi mảnh
+  có nguyên âm, từ một âm tiết không tách.
 - Trang luôn nhắc: chỉ dùng cho bài đã hết bản quyền (Public Domain) hoặc lời do chính chủ viết.
 - Lời người dùng dán vào là không tin cậy: trang chỉ đưa vào DOM bằng `textContent`/text node, không `innerHTML`.
 - Không tạo pull request nếu chủ không yêu cầu. Kiểm chứng trên Windows và Linux (CI) trước khi báo xong.

@@ -77,6 +77,27 @@ test('the page works from disk', async t => {
     assert.equal(await page.locator('#out .w').nth(1).locator('ruby').evaluate(r => r.firstChild.textContent), 'nyght');
   });
 
+  await t.test('"Thêm khoảng trống" splits syllables with spaces', async () => {
+    await page.selectOption('#sample', 'jingle');
+    await page.click('#m-space + label');
+    await page.click('#lv-strong + label');
+    const text = await page.evaluate(() => [...document.querySelectorAll('#out .line')].map(l => {
+      const c = l.cloneNode(true);
+      c.querySelectorAll('rt').forEach(rt => rt.remove());
+      return c.textContent;
+    }).join('\n'));
+    assert.match(text, /In a one horse o pen sleigh/);
+    assert.match(text, /A sleigh ing song to night!/);
+    assert.match(text, /Jin gle bells, jin gle bells/);
+    assert.equal(await page.isDisabled('#homo'), true);
+    await page.locator('#out .w.changed').first().click();
+    assert.match(await page.textContent('#popOpts'), /tách âm tiết/);
+    await page.keyboard.press('Escape');
+    await page.reload();
+    await page.waitForSelector('#out .w.changed');
+    assert.equal(await page.isChecked('#m-space'), true);
+  });
+
   await t.test('fits a phone screen', async () => {
     await page.setViewportSize({ width: 380, height: 800 });
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= 380));

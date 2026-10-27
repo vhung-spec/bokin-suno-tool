@@ -136,6 +136,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .check { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
 .check input { width: 18px; height: 18px; accent-color: var(--accent); margin: 0; }
 .check .eg { font-family: var(--f-lyric); color: var(--muted); font-size: .9rem; }
+.check:has(input:disabled) { opacity: .5; cursor: default; }
 .ctl-group { display: grid; gap: 6px; }
 .ctl-group .lbl {
   font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600;
@@ -203,6 +204,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .chip.warn { background: var(--warn-bg); color: var(--warn); }
 .chip.bad { background: var(--bad-bg); color: var(--bad); }
 .chip q { font-family: var(--f-lyric); font-style: italic; quotes: "“" "”"; }
+.meter .tip { flex-basis: 100%; margin: 0; font-size: .85rem; color: var(--muted); }
 
 .lyrics {
   padding: 8px 18px 18px;
@@ -297,13 +299,22 @@ button, input, select, textarea { font: inherit; color: inherit; }
 <main class="wrap">
   <header class="masthead">
     <h1>Lời Đồng Âm</h1>
-    <p class="lede">Viết lại lời tiếng Anh theo cách đọc. Suno vẫn hát như cũ, nhưng chữ không còn trùng nguyên văn
-      với bản lời có sẵn trên mạng.</p>
+    <p class="lede">Viết lại lời tiếng Anh theo cách đọc, hoặc tách âm tiết bằng khoảng trống. Suno vẫn hát như cũ,
+      nhưng chữ không còn trùng nguyên văn với bản lời có sẵn trên mạng.</p>
     <div class="staff" aria-hidden="true"></div>
     <p class="notice">Chỉ dùng cho bài đã hết bản quyền (Public Domain) hoặc lời do chính bạn viết.</p>
   </header>
 
   <section class="controls" aria-label="Cách đổi">
+    <fieldset class="seg" id="method">
+      <legend>Cách đổi</legend>
+      <input type="radio" name="method" id="m-respell" value="respell" checked>
+      <label for="m-respell"><b>Viết theo âm</b><small>night → nite</small></label>
+      <input type="radio" name="method" id="m-space" value="space">
+      <label for="m-space"><b>Thêm khoảng trống</b><small>open → o pen</small></label>
+      <input type="radio" name="method" id="m-both" value="both">
+      <label for="m-both"><b>Cả hai</b><small>từng từ, cách nào được</small></label>
+    </fieldset>
     <fieldset class="seg" id="level">
       <legend>Mức đổi</legend>
       <input type="radio" name="level" id="lv-light" value="light">
@@ -372,10 +383,13 @@ button, input, select, textarea { font: inherit; color: inherit; }
       <h2>Cách dùng</h2>
       <ol>
         <li>Dán lời gốc vào ô <b>Lời gốc</b>.</li>
-        <li>Chọn mức <b>Vừa</b>. Từ tô đỏ là từ đã được viết lại, từ gốc hiện nhỏ phía trên.</li>
+        <li>Chọn <b>Cách đổi</b>: <b>Viết theo âm</b> (night → nite), <b>Thêm khoảng trống</b> (open → o pen, chỉ tách
+          được từ có hai âm tiết trở lên) hoặc <b>Cả hai</b>.</li>
+        <li>Chọn mức <b>Vừa</b>. Từ tô đỏ là từ đã đổi, từ gốc hiện nhỏ phía trên.</li>
         <li>Bấm vào từ nào trông lạ để chọn cách viết khác, hoặc trả về từ gốc.</li>
         <li>Bấm <b>Chép lời</b>, rồi dán vào ô Lyrics ở chế độ Custom của Suno.</li>
-        <li>Nếu Suno vẫn báo bản quyền: chọn <b>Mạnh</b> hoặc bấm <b>Tạo bản khác</b>, rồi thử lại.</li>
+        <li>Nếu Suno vẫn báo bản quyền: chọn <b>Mạnh</b>, đổi sang <b>Cả hai</b> hoặc bấm <b>Tạo bản khác</b>, rồi thử
+          lại.</li>
         <li>Nghe bản Suno hát. Từ nào hát sai, bấm vào từ đó, chọn cách viết khác và đánh dấu <b>Ghi nhớ</b>.</li>
       </ol>
       <p>Ô “đoạn trùng dài nhất” cho biết số từ gốc liền nhau còn giữ nguyên. Càng ngắn càng khó bị nhận ra.
@@ -406,6 +420,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   <label class="check"><input type="checkbox" id="popRemember"> Ghi nhớ cho các lần sau (thêm vào Từ điển riêng)</label>
 </div>
 
+<script src="hyphen-en-us.js"></script>
 <script src="engine.js"></script>
 <script>
 (() => {
@@ -447,10 +462,17 @@ Dashing through the snow
 In a one-horse open sleigh
 O'er the fields we go
 Laughing all the way
+
 Bells on bob tail ring
 Making spirits bright
 What fun it is to ride and sing
-A sleighing song tonight`,
+A sleighing song tonight!
+
+[Chorus]
+Jingle bells, jingle bells
+Jingle all the way!
+Oh, what fun it is to ride
+In a one-horse open sleigh!`,
   };
 
   const store = {
@@ -461,12 +483,16 @@ A sleighing song tonight`,
   let lines = [], words = [], seed = 0, customMap = new Map(), openIndex = -1;
   const canSpeak = 'speechSynthesis' in window && typeof SpeechSynthesisUtterance === 'function';
   const level = () => document.querySelector('input[name="level"]:checked').value;
+  const method = () => document.querySelector('input[name="method"]:checked').value;
 
-  const KIND_LABEL = { custom: 'của bạn', homo: 'từ đồng âm', respell: 'viết theo âm', rule: 'viết theo âm' };
+  const KIND_LABEL = {
+    custom: 'của bạn', homo: 'từ đồng âm', respell: 'viết theo âm', rule: 'viết theo âm', split: 'tách âm tiết',
+  };
 
   function rebuild() {
     customMap = Respell.parseCustom(custom.value);
-    lines = Respell.analyse(src.value, { homophones: homo.checked, custom: customMap });
+    homo.disabled = method() === 'space';
+    lines = Respell.analyse(src.value, { method: method(), homophones: homo.checked, custom: customMap });
     Respell.plan(lines, level(), seed);
     words = lines.flatMap(l => l.parts.filter(p => p.w));
     closePop();
@@ -526,8 +552,14 @@ A sleighing song tonight`,
     chip('', `Đã đổi ${st.changed}/${st.total} từ (${Math.round(100 * st.changed / st.total)}%)`);
     const cls = st.longest <= 2 ? 'good' : st.longest <= 4 ? 'warn' : 'bad';
     const q = document.createElement('q');
-    q.textContent = st.longestWords.join(' ');
+    q.textContent = st.longestWords.slice(0, 8).join(' ') + (st.longest > 8 ? ' …' : '');
     chip(cls, `Đoạn trùng dài nhất: ${st.longest} từ`, ...(st.longest ? [q] : []));
+    if (method() === 'space' && st.longest > 4) {
+      const tip = document.createElement('p');
+      tip.className = 'tip';
+      tip.textContent = 'Từ một âm tiết (night, grace…) không tách được. Chọn “Cả hai” để đổi thêm các từ đó.';
+      meter.append(tip);
+    }
   }
 
   // Word picker
@@ -715,6 +747,10 @@ A sleighing song tonight`,
     store.set('level', level());
     rebuild();
   }));
+  document.querySelectorAll('input[name="method"]').forEach(r => r.addEventListener('change', () => {
+    store.set('method', method());
+    rebuild();
+  }));
   homo.addEventListener('change', () => { store.set('homo', homo.checked ? '1' : '0'); rebuild(); });
   showOrig.addEventListener('change', () => {
     out.classList.toggle('show-orig', showOrig.checked);
@@ -748,6 +784,8 @@ A sleighing song tonight`,
   custom.value = store.get('custom') ?? '';
   const savedLevel = store.get('level');
   if (savedLevel && document.getElementById('lv-' + savedLevel)) document.getElementById('lv-' + savedLevel).checked = true;
+  const savedMethod = store.get('method');
+  if (savedMethod && document.getElementById('m-' + savedMethod)) document.getElementById('m-' + savedMethod).checked = true;
   if (store.get('homo') === '0') homo.checked = false;
   if (store.get('orig') === '0') { showOrig.checked = false; out.classList.remove('show-orig'); }
   updateSrcNote();

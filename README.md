@@ -4,13 +4,19 @@ Công cụ hỗ trợ làm cover trên Suno AI.
 
 ## Lời Đồng Âm
 
-Viết lại lời bài hát **tiếng Anh** theo cách đọc. Suno vẫn hát như cũ, nhưng chữ không còn trùng nguyên văn với
-bản lời có sẵn trên mạng, nên bộ lọc lời bài hát của Suno khó nhận ra. Ví dụ:
+Đổi lời bài hát **tiếng Anh** để Suno vẫn hát như cũ, nhưng chữ không còn trùng nguyên văn với bản lời có sẵn trên
+mạng, nên bộ lọc lời bài hát của Suno khó nhận ra. Có hai cách, dùng riêng hoặc cùng lúc:
 
-| Lời gốc | Lời cho Suno | Mức đổi |
+- **Viết theo âm:** đổi chính tả mà giữ cách đọc.
+- **Thêm khoảng trống:** tách các từ nhiều âm tiết bằng khoảng trống, dấu gạch nối giữa hai từ cũng thành khoảng
+  trống (one-horse → one horse).
+
+| Lời gốc | Lời cho Suno | Cách đổi, mức đổi |
 | --- | --- | --- |
-| How precious did that grace appear | How **preshus** did that **grayce** appear | Vừa |
-| Silent night, holy night | **Sylent knight**, **wholly knight** | Mạnh |
+| How precious did that grace appear | How **preshus** did that **grayce** appear | Viết theo âm, Vừa |
+| Silent night, holy night | **Sylent knight**, **wholly knight** | Viết theo âm, Mạnh |
+| In a one-horse open sleigh | In a one horse **o pen** sleigh | Thêm khoảng trống, Mạnh |
+| A sleighing song tonight! | A **sleigh ing** song **to night**! | Thêm khoảng trống, Mạnh |
 
 > Chỉ dùng cho bài **đã hết bản quyền** (Public Domain) hoặc lời do chính bạn viết. Đổi chữ để qua bộ lọc có thể
 > trái điều khoản sử dụng của Suno. Lưu ý: lời Việt hoặc bản soạn mới của một bài cũ có thể vẫn còn bản quyền.
@@ -24,15 +30,17 @@ bản lời có sẵn trên mạng, nên bộ lọc lời bài hát của Suno k
 ### Cách dùng
 
 1. Dán lời gốc vào ô **Lời gốc**. Các dòng thẻ như `[Verse]`, `[Chorus]` được giữ nguyên.
-2. Chọn **Mức đổi**:
+2. Chọn **Cách đổi**: **Viết theo âm**, **Thêm khoảng trống** hoặc **Cả hai** (mỗi từ dùng cách nào có được).
+   Thêm khoảng trống chỉ tách được từ có hai âm tiết trở lên; bài nhiều từ một âm tiết thì chọn **Cả hai**.
+3. Chọn **Mức đổi**:
    - **Nhẹ**: còn tối đa 4 từ gốc liền nhau.
    - **Vừa** (nên dùng trước): còn tối đa 2 từ gốc liền nhau.
    - **Mạnh**: đổi mọi từ đổi được.
-3. Từ màu đỏ là từ đã viết lại, từ gốc hiện nhỏ phía trên. Bấm vào một từ để chọn cách viết khác, trả về từ gốc
+4. Từ màu đỏ là từ đã đổi, từ gốc hiện nhỏ phía trên. Bấm vào một từ để chọn cách viết khác, trả về từ gốc
    hoặc tự gõ.
-4. Bấm **Chép lời**, rồi dán vào ô Lyrics ở chế độ Custom của Suno.
-5. Suno vẫn báo bản quyền: chọn **Mạnh** hoặc bấm **Tạo bản khác**, rồi thử lại.
-6. Nghe bản Suno hát. Từ nào hát sai: bấm vào từ đó, chọn cách viết khác và đánh dấu **Ghi nhớ**. Từ đó được thêm vào
+5. Bấm **Chép lời**, rồi dán vào ô Lyrics ở chế độ Custom của Suno.
+6. Suno vẫn báo bản quyền: chọn **Mạnh**, đổi sang **Cả hai** hoặc bấm **Tạo bản khác**, rồi thử lại.
+7. Nghe bản Suno hát. Từ nào hát sai: bấm vào từ đó, chọn cách viết khác và đánh dấu **Ghi nhớ**. Từ đó được thêm vào
    **Từ điển riêng** (lưu trên trình duyệt) và lần sau tự dùng.
 
 Ô **Đoạn trùng dài nhất** cho biết số từ gốc liền nhau còn giữ nguyên: càng ngắn càng khó bị nhận ra. Nút
@@ -54,6 +62,10 @@ Mỗi từ được xét theo thứ tự:
 4. **Quy tắc chính tả** giữ nguyên âm đọc: `ph` → `f`, `-ight` → `-ite`, `-tion` → `-shun`, `c` → `k`,
    `-y` → `-ee`… Các quy tắc đã được thử trên 4.000 từ tiếng Anh thông dụng nhất; từ nào bị đọc sai được loại ra.
 
+Cách **Thêm khoảng trống** tách âm tiết bằng bộ quy tắc tách chữ tiếng Anh của TeX (hyph-en-us, giữ nguyên bản
+quyền trong `loi-dong-am/hyphen-en-us.js`), rồi tách thêm các âm tiết mở mà bộ quy tắc để dính (o pen, to night).
+Từ một âm tiết (night, grace) không tách.
+
 Sau đó trang chọn những từ cần đổi sao cho số từ gốc liền nhau không vượt quá mức đã chọn. Mỗi lần bấm
 **Tạo bản khác**, trang chọn lại các từ và cách viết khác.
 
@@ -70,6 +82,7 @@ Cài đặt và cách dùng: [TAI-NHAC-SUNO.md](TAI-NHAC-SUNO.md).
 
 ```
 loi-dong-am/engine.js       bộ đổi chữ (chạy trên trình duyệt và Node)
+loi-dong-am/hyphen-en-us.js bộ quy tắc tách âm tiết tiếng Anh (TeX hyph-en-us)
 loi-dong-am/index.html      giao diện
 tests/engine.test.js        bài thử bộ đổi chữ
 tests/page.test.js          bài thử trang trong Chromium (Playwright)
