@@ -26,7 +26,7 @@ def test_everything_off_is_transparent(song):
 
 
 @pytest.mark.parametrize("name,target", [("streaming", -14.0), ("loud", -10.0), ("gentle", -16.0),
-                                         ("jazz", -14.0)])
+                                         ("bossa", -14.0), ("jazz", -14.0)])
 def test_presets_hit_loudness_and_ceiling(song, name, target):
     y, removed, report = process(song, SR, preset(name))
     assert lufs(y, SR) == pytest.approx(target, abs=0.15)
@@ -35,17 +35,20 @@ def test_presets_hit_loudness_and_ceiling(song, name, target):
     assert removed is not None and removed.shape == y.shape
 
 
-def test_jazz_is_fuller_than_streaming():
-    # a soft verse, then a full chorus: the jazz preset brings the verse closer
+def test_bossa_is_closest_and_jazz_keeps_more_dynamics():
+    # a soft verse, then a full chorus: bossa brings the verse closest, jazz
+    # less so, both closer than the streaming preset
     x = music(12.0)
     x[: 6 * SR] *= 0.25
     gap = {}
-    for name in ("streaming", "jazz"):
+    for name in ("streaming", "bossa", "jazz"):
         y, _, report = process(x, SR, preset(name))
         gap[name] = lufs(y[6 * SR:], SR) - lufs(y[: 6 * SR], SR)
         assert report["output"]["lufs"] == pytest.approx(-14, abs=0.15)
-    assert gap["jazz"] < gap["streaming"] - 1.0
-    assert {"warmth", "density"} <= set(report["stages"])
+        if name != "streaming":
+            assert {"warmth", "density"} <= set(report["stages"])
+    assert gap["bossa"] < gap["jazz"] - 0.5
+    assert gap["jazz"] < gap["streaming"]
 
 
 def test_reference_loudness(song):
@@ -95,4 +98,4 @@ def test_settings_round_trip_and_validation():
         Settings(format="mp3").check(sr=96000)
     with pytest.raises(ValueError):
         preset("nope")
-    assert set(PRESETS) == {"streaming", "loud", "gentle", "clean_only", "jazz"}
+    assert set(PRESETS) == {"streaming", "loud", "gentle", "clean_only", "bossa", "jazz"}

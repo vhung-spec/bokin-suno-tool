@@ -117,16 +117,23 @@ PRESETS = {
     "gentle": {"target_lufs": -16.0, "ceiling_db": -1.5, "glue": 0.15,
                "clean": {"shimmer": 0.35, "dehiss": 0.0, "deess": 0.0, "dewhine": 0.5}},
     "clean_only": {"target_lufs": None, "glue": 0.0, "mono_bass_hz": 0.0},
-    # Bossa nova, jazz, Christmas jazz: fuller and clearer, dynamics kept.
-    # Body and warmth thicken guitar, piano, upright bass and voice; presence
-    # and air bring them forward; parallel compression lifts the quiet details
-    # (brushes, breaths, tails), and with them the hiss floor, so some hiss
-    # removal is on. Lighter shimmer removal spares brushes and bells; a
-    # slower limiter release keeps the upright bass clean.
-    "jazz": {"target_lufs": -14.0, "ceiling_db": -1.0, "glue": 0.15, "warmth": 0.35, "density": 0.35,
+    # Bossa nova: warm, close and smooth. Body and tube warmth for nylon
+    # guitar and soft voices, parallel compression brings breaths and brushes
+    # close, the 3.5 kHz edge of picks and Suno voices is softened. Lifting the
+    # quiet parts lifts the hiss floor too, hence the hiss removal.
+    "bossa": {"target_lufs": -14.0, "ceiling_db": -1.0, "glue": 0.15, "warmth": 0.5, "density": 0.45,
+              "mono_bass_hz": 100.0, "release_ms": 150.0,
+              "clean": {"shimmer": 0.4, "dehiss": 0.35, "deess": 0.0, "dewhine": 0.5},
+              "eq": {"body": 2.5, "presence": 1.0, "harsh": -1.5, "air": 1.0}},
+    # Jazz (swing, piano trio, big band, Christmas jazz): open and punchy.
+    # Less parallel compression and warmth keep more of the dynamics; weight
+    # for the walking bass, presence for horns and piano, air for the ride
+    # cymbal; lighter hiss and shimmer removal keep cymbals and brushes. Both
+    # use a slower limiter release so the upright bass stays clean.
+    "jazz": {"target_lufs": -14.0, "ceiling_db": -1.0, "glue": 0.25, "warmth": 0.25, "density": 0.2,
              "mono_bass_hz": 100.0, "release_ms": 150.0,
-             "clean": {"shimmer": 0.4, "dehiss": 0.3, "deess": 0.0, "dewhine": 0.5},
-             "eq": {"body": 2.0, "presence": 1.5, "air": 1.0}},
+             "clean": {"shimmer": 0.35, "dehiss": 0.2, "deess": 0.0, "dewhine": 0.5},
+             "eq": {"bass": 1.0, "body": 1.5, "presence": 1.5, "air": 2.0}},
 }
 
 
