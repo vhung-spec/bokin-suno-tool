@@ -1,0 +1,759 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Lời Đồng Âm</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600&family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=Literata:opsz,wght@7..72,400;7..72,500&display=swap">
+<style>
+/* Layout: a lyric sheet on a music stand. Original on the left, the corrected copy on the right with
+   pencil marks over every word that was respelled. */
+:root {
+  --paper: #f2f3f7;
+  --sheet: #ffffff;
+  --ink: #161b26;
+  --muted: #5a6273;
+  --rule: #dadde6;
+  --staff: #c9cdd8;
+  --accent: #2340c9;
+  --accent-ink: #ffffff;
+  --mark: #b0202d;
+  --mark-bg: #fce9eb;
+  --mark-line: rgba(176, 32, 45, .38);
+  --good: #17784a;
+  --good-bg: #e2f3e9;
+  --warn: #935600;
+  --warn-bg: #fcefd9;
+  --bad: #b0202d;
+  --bad-bg: #fce9eb;
+  --shadow: 0 1px 2px rgba(22, 27, 38, .06), 0 6px 24px rgba(22, 27, 38, .06);
+
+  --f-display: "Bricolage Grotesque", "Be Vietnam Pro", system-ui, sans-serif;
+  --f-ui: "Be Vietnam Pro", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-lyric: "Literata", Georgia, "Times New Roman", serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #0e1118; --sheet: #161a24; --ink: #e6e8ef; --muted: #9aa1b2; --rule: #2a3040; --staff: #343b4d;
+    --accent: #8fa2ff; --accent-ink: #0e1118; --mark: #ff8d97; --mark-bg: rgba(255, 120, 135, .14); --mark-line: rgba(255, 141, 151, .5);
+    --good: #6fd6a0; --good-bg: rgba(111, 214, 160, .13); --warn: #f2bd62; --warn-bg: rgba(242, 189, 98, .13);
+    --bad: #ff8d97; --bad-bg: rgba(255, 120, 135, .14); --shadow: 0 1px 2px rgba(0, 0, 0, .3);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #0e1118; --sheet: #161a24; --ink: #e6e8ef; --muted: #9aa1b2; --rule: #2a3040; --staff: #343b4d;
+  --accent: #8fa2ff; --accent-ink: #0e1118; --mark: #ff8d97; --mark-bg: rgba(255, 120, 135, .14); --mark-line: rgba(255, 141, 151, .5);
+  --good: #6fd6a0; --good-bg: rgba(111, 214, 160, .13); --warn: #f2bd62; --warn-bg: rgba(242, 189, 98, .13);
+  --bad: #ff8d97; --bad-bg: rgba(255, 120, 135, .14); --shadow: 0 1px 2px rgba(0, 0, 0, .3);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--f-ui);
+  font-size: 15px;
+  line-height: 1.55;
+}
+.wrap {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding-block: 28px 56px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid;
+  gap: 20px;
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Masthead */
+.masthead { display: grid; gap: 10px; }
+.masthead h1 {
+  font-family: var(--f-display);
+  font-weight: 800;
+  font-size: clamp(2rem, 4.6vw, 2.9rem);
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  margin: 0;
+  text-wrap: balance;
+}
+.masthead .lede { margin: 0; max-width: 62ch; color: var(--muted); font-size: 1rem; }
+.staff {
+  height: 25px;
+  background: repeating-linear-gradient(to bottom, var(--staff) 0 1px, transparent 1px 6px);
+  margin-top: 4px;
+  opacity: .9;
+}
+.notice {
+  margin: 0;
+  font-size: .9rem;
+  color: var(--warn);
+  background: var(--warn-bg);
+  border-radius: 8px;
+  padding: 8px 12px;
+  justify-self: start;
+}
+
+/* Controls */
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+}
+.seg { display: inline-grid; grid-template-columns: repeat(3, auto); border: 0; padding: 0; margin: 0; min-width: 0; }
+@media (max-width: 560px) { .seg { display: grid; width: 100%; grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.seg legend {
+  font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted);
+  padding: 0; margin-bottom: 6px; font-weight: 600;
+}
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg label {
+  display: grid;
+  gap: 0;
+  padding: 7px 14px;
+  border: 1px solid var(--rule);
+  background: var(--sheet);
+  cursor: pointer;
+  min-width: 0;
+}
+.seg input:not(:first-of-type) + label { margin-left: -1px; }
+.seg label:first-of-type { border-radius: 10px 0 0 10px; }
+.seg label:last-of-type { border-radius: 0 10px 10px 0; }
+.seg label b { font-weight: 600; }
+.seg label small { color: var(--muted); font-size: .76rem; line-height: 1.3; }
+.seg input:checked + label { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); position: relative; }
+.seg input:checked + label small { color: inherit; opacity: .85; }
+.seg input:focus-visible + label { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.check { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.check input { width: 18px; height: 18px; accent-color: var(--accent); margin: 0; }
+.check .eg { font-family: var(--f-lyric); color: var(--muted); font-size: .9rem; }
+.ctl-group { display: grid; gap: 6px; }
+.ctl-group .lbl {
+  font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600;
+}
+
+.btn {
+  border: 1px solid var(--rule);
+  background: var(--sheet);
+  border-radius: 10px;
+  padding: 8px 14px;
+  cursor: pointer;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: border-color .15s, background-color .15s;
+}
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn svg { width: 16px; height: 16px; flex: none; }
+
+/* Sheets */
+.sheets { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 880px) { .sheets { grid-template-columns: minmax(0, 1fr); } }
+.sheet {
+  background: var(--sheet);
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  display: grid;
+  min-width: 0;
+}
+.sheet-head {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid var(--rule);
+}
+.sheet-head h2 { font-family: var(--f-display); font-weight: 700; font-size: 1.15rem; margin: 0; }
+.sheet-head .tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.sheet-head select {
+  border: 1px solid var(--rule); background: var(--sheet); border-radius: 10px; padding: 7px 10px; cursor: pointer;
+  max-width: 100%;
+}
+#src {
+  width: 100%;
+  min-height: 460px;
+  border: 0;
+  resize: vertical;
+  padding: 16px 18px;
+  background: transparent;
+  font-family: var(--f-lyric);
+  font-size: 1.05rem;
+  line-height: 2.05;
+  outline-offset: -2px;
+}
+.foot { padding: 10px 16px 14px; border-top: 1px solid var(--rule); color: var(--muted); font-size: .85rem; margin: 0; }
+
+.meter { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 16px 0; }
+.chip {
+  display: inline-flex; align-items: baseline; gap: 6px;
+  border-radius: 999px; padding: 4px 11px; font-size: .85rem; font-variant-numeric: tabular-nums;
+  background: var(--paper); color: var(--ink);
+}
+.chip.good { background: var(--good-bg); color: var(--good); }
+.chip.warn { background: var(--warn-bg); color: var(--warn); }
+.chip.bad { background: var(--bad-bg); color: var(--bad); }
+.chip q { font-family: var(--f-lyric); font-style: italic; quotes: "“" "”"; }
+
+.lyrics {
+  padding: 8px 18px 18px;
+  min-height: 420px;
+  font-family: var(--f-lyric);
+  font-size: 1.05rem;
+  line-height: 2.05;
+  overflow-wrap: anywhere;
+}
+.lyrics.show-orig { line-height: 2.5; }
+.line { min-height: 2.05em; white-space: pre-wrap; }
+.line.tag { color: var(--muted); font-family: var(--f-ui); font-size: .82rem; letter-spacing: .06em; font-weight: 600; }
+.w {
+  border: 0; background: none; padding: 0 1px; margin: 0 -1px; border-radius: 4px; cursor: pointer;
+  font: inherit; line-height: inherit; color: inherit;
+}
+.w:hover { background: var(--paper); }
+.w.changed {
+  color: var(--mark);
+  text-decoration: underline 2px var(--mark-line);
+  text-underline-offset: 4px;
+}
+.w.changed.mine { text-decoration-style: double; }
+.w ruby { ruby-position: over; }
+.w rt {
+  font-family: var(--f-ui); font-size: .58em; color: var(--muted); letter-spacing: .02em; line-height: 1;
+}
+.lyrics:not(.show-orig) .w rt { display: none; }
+.empty { color: var(--muted); font-family: var(--f-ui); font-size: .95rem; padding-top: 12px; }
+
+.out-actions { display: flex; align-items: center; gap: 10px; }
+.status { font-size: .85rem; color: var(--good); min-height: 1.2em; }
+
+/* Guide */
+.lower { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 880px) { .lower { grid-template-columns: minmax(0, 1fr); } }
+.guide h2, .custom summary { font-family: var(--f-display); font-weight: 700; font-size: 1.15rem; margin: 0; }
+.guide ol { margin: 10px 0 0; padding-left: 1.3em; display: grid; gap: 6px; max-width: 64ch; }
+.guide p { color: var(--muted); font-size: .88rem; margin: 10px 0 0; max-width: 64ch; }
+.custom {
+  background: var(--sheet); border: 1px solid var(--rule); border-radius: 14px; padding: 14px 16px;
+}
+.custom summary { cursor: pointer; }
+.custom summary span { font-family: var(--f-ui); font-weight: 500; font-size: .85rem; color: var(--muted); }
+.custom p { color: var(--muted); font-size: .88rem; margin: 10px 0; }
+.custom code { font-family: var(--f-lyric); background: var(--paper); padding: 1px 6px; border-radius: 4px; }
+#custom {
+  width: 100%; min-height: 140px; resize: vertical; border: 1px solid var(--rule); border-radius: 10px;
+  background: var(--paper); padding: 10px 12px; font-family: var(--f-lyric); line-height: 1.7;
+}
+
+/* Word picker */
+.pop {
+  position: absolute; z-index: 20;
+  width: min(330px, calc(100vw - 32px));
+  background: var(--sheet); color: var(--ink);
+  border: 1px solid var(--rule); border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, .18);
+  padding: 12px; display: grid; gap: 10px;
+}
+.pop-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.pop-head .orig { font-family: var(--f-lyric); font-size: 1.1rem; }
+.pop-head .orig small { font-family: var(--f-ui); color: var(--muted); font-size: .75rem; margin-right: 6px; }
+.opts { display: grid; gap: 4px; }
+.opt { display: flex; align-items: center; gap: 6px; }
+.opt .pick {
+  flex: 1; min-width: 0; text-align: left; display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+  border: 1px solid var(--rule); background: var(--sheet); border-radius: 9px; padding: 6px 10px; cursor: pointer;
+}
+.opt .pick:hover { border-color: var(--accent); }
+.opt .pick.on { border-color: var(--accent); background: var(--paper); }
+.opt .pick span { font-family: var(--f-lyric); font-size: 1rem; }
+.opt .pick small { color: var(--muted); font-size: .72rem; white-space: nowrap; }
+.icon-btn {
+  border: 1px solid var(--rule); background: var(--sheet); border-radius: 9px; width: 34px; height: 34px;
+  display: inline-grid; place-items: center; cursor: pointer; flex: none; padding: 0;
+}
+.icon-btn:hover { border-color: var(--accent); }
+.icon-btn svg { width: 16px; height: 16px; }
+.own { display: flex; gap: 6px; }
+.own input {
+  flex: 1; min-width: 0; border: 1px solid var(--rule); border-radius: 9px; padding: 6px 10px;
+  background: var(--paper); font-family: var(--f-lyric);
+}
+.pop .check { font-size: .85rem; color: var(--muted); }
+
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<main class="wrap">
+  <header class="masthead">
+    <h1>Lời Đồng Âm</h1>
+    <p class="lede">Viết lại lời tiếng Anh theo cách đọc. Suno vẫn hát như cũ, nhưng chữ không còn trùng nguyên văn
+      với bản lời có sẵn trên mạng.</p>
+    <div class="staff" aria-hidden="true"></div>
+    <p class="notice">Chỉ dùng cho bài đã hết bản quyền (Public Domain) hoặc lời do chính bạn viết.</p>
+  </header>
+
+  <section class="controls" aria-label="Cách đổi">
+    <fieldset class="seg" id="level">
+      <legend>Mức đổi</legend>
+      <input type="radio" name="level" id="lv-light" value="light">
+      <label for="lv-light"><b>Nhẹ</b><small>tối đa 4 từ gốc liền nhau</small></label>
+      <input type="radio" name="level" id="lv-medium" value="medium" checked>
+      <label for="lv-medium"><b>Vừa</b><small>tối đa 2 từ gốc liền nhau</small></label>
+      <input type="radio" name="level" id="lv-strong" value="strong">
+      <label for="lv-strong"><b>Mạnh</b><small>đổi mọi từ đổi được</small></label>
+    </fieldset>
+    <div class="ctl-group">
+      <span class="lbl">Tuỳ chọn</span>
+      <label class="check"><input type="checkbox" id="homo" checked> Dùng từ đồng âm <span class="eg">night → knight</span></label>
+      <label class="check"><input type="checkbox" id="showOrig" checked> Hiện từ gốc phía trên</label>
+    </div>
+    <div class="ctl-group">
+      <span class="lbl">Suno vẫn chặn?</span>
+      <button class="btn" id="reroll" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 21v-5h5"/></svg>
+        Tạo bản khác
+      </button>
+    </div>
+  </section>
+
+  <div class="sheets">
+    <section class="sheet" aria-labelledby="h-src">
+      <div class="sheet-head">
+        <h2 id="h-src">Lời gốc</h2>
+        <div class="tools">
+          <label for="sample" class="sr">Bài mẫu</label>
+          <select id="sample">
+            <option value="">Bài mẫu…</option>
+            <option value="amazing">Amazing Grace (1779)</option>
+            <option value="silent">Silent Night (1818)</option>
+            <option value="susanna">Oh! Susanna (1848)</option>
+            <option value="jingle">Jingle Bells (1857)</option>
+          </select>
+        </div>
+      </div>
+      <textarea id="src" spellcheck="false" aria-label="Lời gốc tiếng Anh" placeholder="Dán lời bài hát tiếng Anh vào đây…"></textarea>
+      <p class="foot" id="srcNote">Các dòng thẻ như [Verse], [Chorus] được giữ nguyên.</p>
+    </section>
+
+    <section class="sheet" aria-labelledby="h-out">
+      <div class="sheet-head">
+        <h2 id="h-out">Lời cho Suno</h2>
+        <div class="out-actions">
+          <span class="status" id="status" role="status"></span>
+          <button class="btn" id="speakAll" type="button" hidden>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>
+            <span>Đọc thử</span>
+          </button>
+          <button class="btn primary" id="copy" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+            Chép lời
+          </button>
+        </div>
+      </div>
+      <div class="meter" id="meter"></div>
+      <div class="lyrics show-orig" id="out" aria-live="polite"></div>
+      <p class="foot">Bấm vào một từ để chọn cách viết khác, trả về từ gốc hoặc tự gõ.</p>
+    </section>
+  </div>
+
+  <div class="lower">
+    <section class="guide">
+      <h2>Cách dùng</h2>
+      <ol>
+        <li>Dán lời gốc vào ô <b>Lời gốc</b>.</li>
+        <li>Chọn mức <b>Vừa</b>. Từ tô đỏ là từ đã được viết lại, từ gốc hiện nhỏ phía trên.</li>
+        <li>Bấm vào từ nào trông lạ để chọn cách viết khác, hoặc trả về từ gốc.</li>
+        <li>Bấm <b>Chép lời</b>, rồi dán vào ô Lyrics ở chế độ Custom của Suno.</li>
+        <li>Nếu Suno vẫn báo bản quyền: chọn <b>Mạnh</b> hoặc bấm <b>Tạo bản khác</b>, rồi thử lại.</li>
+        <li>Nghe bản Suno hát. Từ nào hát sai, bấm vào từ đó, chọn cách viết khác và đánh dấu <b>Ghi nhớ</b>.</li>
+      </ol>
+      <p>Ô “đoạn trùng dài nhất” cho biết số từ gốc liền nhau còn giữ nguyên. Càng ngắn càng khó bị nhận ra.
+        “Đọc thử” dùng giọng máy của trình duyệt, chỉ để tham khảo: Suno có thể đọc khác.</p>
+    </section>
+
+    <details class="custom" id="customBox">
+      <summary>Từ điển riêng <span id="customCount"></span></summary>
+      <p>Mỗi dòng một từ, dạng <code>word = cách viết</code>. Từ trong danh sách này luôn được đổi theo cách bạn ghi.
+        Danh sách lưu trên trình duyệt này.</p>
+      <textarea id="custom" spellcheck="false" aria-label="Từ điển riêng" placeholder="lord = lawrd&#10;wind = winnd"></textarea>
+    </details>
+  </div>
+</main>
+
+<div class="pop" id="pop" role="dialog" aria-label="Chọn cách viết" hidden>
+  <div class="pop-head">
+    <span class="orig"><small>Từ gốc</small><span id="popWord"></span></span>
+    <button class="icon-btn speak" type="button" id="popSpeak" aria-label="Đọc từ gốc">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>
+    </button>
+  </div>
+  <div class="opts" id="popOpts"></div>
+  <form class="own" id="popForm">
+    <input id="popInput" type="text" autocomplete="off" spellcheck="false" aria-label="Tự gõ cách viết" placeholder="Tự gõ cách viết">
+    <button class="btn" type="submit">Dùng</button>
+  </form>
+  <label class="check"><input type="checkbox" id="popRemember"> Ghi nhớ cho các lần sau (thêm vào Từ điển riêng)</label>
+</div>
+
+<script src="engine.js"></script>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const src = $('src'), out = $('out'), meter = $('meter'), status = $('status');
+  const homo = $('homo'), showOrig = $('showOrig'), custom = $('custom');
+  const pop = $('pop'), popOpts = $('popOpts'), popInput = $('popInput'), popRemember = $('popRemember');
+
+  const SAMPLES = {
+    amazing: `[Verse 1]
+Amazing grace, how sweet the sound
+That saved a wretch like me
+I once was lost, but now am found
+Was blind, but now I see
+
+[Verse 2]
+'Twas grace that taught my heart to fear
+And grace my fears relieved
+How precious did that grace appear
+The hour I first believed`,
+    silent: `[Verse]
+Silent night, holy night
+All is calm, all is bright
+Round yon Virgin, mother and child
+Holy infant so tender and mild
+Sleep in heavenly peace
+Sleep in heavenly peace`,
+    susanna: `[Verse]
+I come from Alabama with my banjo on my knee
+I'm going to Louisiana, my true love for to see
+It rained all night the day I left, the weather it was dry
+The sun so hot I froze to death, Susanna, don't you cry
+
+[Chorus]
+Oh! Susanna, oh don't you cry for me
+For I come from Alabama with my banjo on my knee`,
+    jingle: `[Verse]
+Dashing through the snow
+In a one-horse open sleigh
+O'er the fields we go
+Laughing all the way
+Bells on bob tail ring
+Making spirits bright
+What fun it is to ride and sing
+A sleighing song tonight`,
+  };
+
+  const store = {
+    get(k) { try { return localStorage.getItem('loi-dong-am.' + k); } catch (e) { return null; } },
+    set(k, v) { try { localStorage.setItem('loi-dong-am.' + k, v); } catch (e) { /* storage unavailable */ } },
+  };
+
+  let lines = [], words = [], seed = 0, customMap = new Map(), openIndex = -1;
+  const canSpeak = 'speechSynthesis' in window && typeof SpeechSynthesisUtterance === 'function';
+  const level = () => document.querySelector('input[name="level"]:checked').value;
+
+  const KIND_LABEL = { custom: 'của bạn', homo: 'từ đồng âm', respell: 'viết theo âm', rule: 'viết theo âm' };
+
+  function rebuild() {
+    customMap = Respell.parseCustom(custom.value);
+    lines = Respell.analyse(src.value, { homophones: homo.checked, custom: customMap });
+    Respell.plan(lines, level(), seed);
+    words = lines.flatMap(l => l.parts.filter(p => p.w));
+    closePop();
+    render();
+  }
+
+  function wordNode(p, i) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'w' + (p.pick >= 0 ? ' changed' : '') + (p.pick >= 0 && p.alts[p.pick].kind === 'custom' ? ' mine' : '');
+    b.dataset.i = i;
+    if (p.pick >= 0) {
+      const ruby = document.createElement('ruby');
+      ruby.append(Respell.shown(p));
+      const rt = document.createElement('rt');
+      rt.textContent = p.w;
+      ruby.append(rt);
+      b.append(ruby);
+      b.setAttribute('aria-label', `${Respell.shown(p)}, từ gốc ${p.w}`);
+    } else {
+      b.textContent = p.w;
+    }
+    return b;
+  }
+
+  function render() {
+    out.textContent = '';
+    if (!src.value.trim()) {
+      const e = document.createElement('p');
+      e.className = 'empty';
+      e.textContent = 'Lời đã sửa sẽ hiện ở đây khi bạn dán lời gốc vào ô bên trái.';
+      out.append(e);
+      meter.textContent = '';
+      return;
+    }
+    let i = 0;
+    for (const l of lines) {
+      const div = document.createElement('div');
+      div.className = 'line' + (l.tag ? ' tag' : '');
+      for (const p of l.parts) div.append(p.w ? wordNode(p, i++) : p.s);
+      if (!l.parts.length || (l.parts.length === 1 && !l.parts[0].w && !l.parts[0].s.trim())) div.append(' ');
+      out.append(div);
+    }
+    renderMeter();
+  }
+
+  function renderMeter() {
+    const st = Respell.stats(lines);
+    meter.textContent = '';
+    if (!st.total) return;
+    const chip = (cls, ...nodes) => {
+      const c = document.createElement('span');
+      c.className = 'chip ' + cls;
+      c.append(...nodes);
+      meter.append(c);
+    };
+    chip('', `Đã đổi ${st.changed}/${st.total} từ (${Math.round(100 * st.changed / st.total)}%)`);
+    const cls = st.longest <= 2 ? 'good' : st.longest <= 4 ? 'warn' : 'bad';
+    const q = document.createElement('q');
+    q.textContent = st.longestWords.join(' ');
+    chip(cls, `Đoạn trùng dài nhất: ${st.longest} từ`, ...(st.longest ? [q] : []));
+  }
+
+  // Word picker
+  function openPop(i, anchor) {
+    const p = words[i];
+    openIndex = i;
+    $('popWord').textContent = p.w;
+    popOpts.textContent = '';
+    const choices = p.alts.map((a, k) => ({ text: Respell.applyCase(p.w, a.text), label: KIND_LABEL[a.kind], k }));
+    choices.push({ text: p.w, label: 'giữ từ gốc', k: -1 });
+    for (const c of choices) {
+      const row = document.createElement('div');
+      row.className = 'opt';
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'pick' + (c.k === p.pick ? ' on' : '');
+      const t = document.createElement('span');
+      t.textContent = c.text;
+      const s = document.createElement('small');
+      s.textContent = c.label;
+      b.append(t, s);
+      b.addEventListener('click', () => choose(i, c.k, c.text));
+      row.append(b);
+      if (canSpeak) row.append(speakButton(c.text));
+      popOpts.append(row);
+    }
+    popInput.value = '';
+    popRemember.checked = false;
+    pop.hidden = false;
+    const r = anchor.getBoundingClientRect();
+    const w = pop.offsetWidth;
+    const left = Math.min(Math.max(16, r.left + window.scrollX), window.scrollX + document.documentElement.clientWidth - w - 16);
+    pop.style.left = left + 'px';
+    pop.style.top = (r.bottom + window.scrollY + 8) + 'px';
+    const first = popOpts.querySelector('.pick.on') || popOpts.querySelector('.pick');
+    if (first) first.focus({ preventScroll: true });
+  }
+
+  function closePop() {
+    if (pop.hidden) return;
+    pop.hidden = true;
+    const b = out.querySelector(`.w[data-i="${openIndex}"]`);
+    openIndex = -1;
+    if (b) b.focus({ preventScroll: true });
+  }
+
+  // Saves "word = spelling"; "word = word" keeps that word unchanged from now on.
+  function remember(word, text) {
+    const key = word.toLowerCase().replace(/’/g, "'");
+    const rows = custom.value.split('\n').filter(l => {
+      const m = l.match(/^\s*([A-Za-z'’]+)\s*(?:=|->|→|:)/);
+      return l.trim() && !(m && m[1].toLowerCase().replace(/’/g, "'") === key);
+    });
+    rows.push(`${key} = ${text.toLowerCase()}`);
+    custom.value = rows.join('\n');
+    store.set('custom', custom.value);
+    updateCustomCount();
+  }
+
+  function choose(i, k, text) {
+    const p = words[i];
+    if (popRemember.checked) {
+      remember(p.w, text);
+      rebuild();
+      return;
+    }
+    if (k === -2) {
+      p.alts = [{ text, kind: 'custom' }, ...p.alts.filter(a => a.text !== text)];
+      p.pick = 0;
+    } else {
+      p.pick = k;
+    }
+    const old = out.querySelector(`.w[data-i="${i}"]`);
+    const fresh = wordNode(p, i);
+    old.replaceWith(fresh);
+    renderMeter();
+    pop.hidden = true;
+    openIndex = -1;
+    fresh.focus({ preventScroll: true });
+  }
+
+  $('popForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const text = popInput.value.trim();
+    if (!text || openIndex < 0) return;
+    choose(openIndex, -2, text);
+  });
+
+  out.addEventListener('click', e => {
+    const b = e.target.closest('.w');
+    if (!b) return;
+    e.stopPropagation();
+    const i = Number(b.dataset.i);
+    if (!pop.hidden && openIndex === i) { closePop(); return; }
+    openPop(i, b);
+  });
+  document.addEventListener('click', e => {
+    if (!pop.hidden && !pop.contains(e.target)) closePop();
+  });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closePop(); });
+  window.addEventListener('resize', () => { if (!pop.hidden) pop.hidden = true; });
+
+  // Browser voice, for a rough check only
+  let speakingAll = false;
+  function englishVoice() {
+    try {
+      const v = speechSynthesis.getVoices();
+      return v.find(x => /^en[-_]US/i.test(x.lang)) || v.find(x => /^en/i.test(x.lang)) || null;
+    } catch (e) { return null; }
+  }
+  function speak(text, onEnd) {
+    if (!canSpeak) return;
+    try {
+      speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = 'en-US';
+      const v = englishVoice();
+      if (v) u.voice = v;
+      u.rate = .92;
+      if (onEnd) { u.onend = onEnd; u.onerror = onEnd; }
+      speechSynthesis.speak(u);
+    } catch (e) { if (onEnd) onEnd(); }
+  }
+  function speakButton(text) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'icon-btn';
+    b.setAttribute('aria-label', 'Đọc ' + text);
+    b.innerHTML = $('popSpeak').innerHTML;
+    b.addEventListener('click', ev => { ev.stopPropagation(); speak(text); });
+    return b;
+  }
+  if (canSpeak) {
+    const all = $('speakAll');
+    all.hidden = false;
+    const label = all.querySelector('span');
+    const reset = () => { speakingAll = false; label.textContent = 'Đọc thử'; };
+    all.addEventListener('click', () => {
+      if (speakingAll) { try { speechSynthesis.cancel(); } catch (e) { /* ignore */ } reset(); return; }
+      const text = Respell.toText(lines.filter(l => !l.tag));
+      if (!text.trim()) return;
+      speakingAll = true;
+      label.textContent = 'Dừng';
+      speak(text, reset);
+    });
+    $('popSpeak').addEventListener('click', e => { e.stopPropagation(); if (openIndex >= 0) speak(words[openIndex].w); });
+  } else {
+    $('popSpeak').hidden = true;
+  }
+
+  // Copy
+  let statusTimer;
+  function say(msg) {
+    status.textContent = msg;
+    clearTimeout(statusTimer);
+    statusTimer = setTimeout(() => { status.textContent = ''; }, 2600);
+  }
+  $('copy').addEventListener('click', () => {
+    const text = Respell.toText(lines);
+    if (!text.trim()) { say('Chưa có lời để chép'); return; }
+    const fallback = () => {
+      const range = document.createRange();
+      range.selectNodeContents(out);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      say('Đã chọn sẵn lời, bấm Ctrl+C để chép');
+    };
+    try {
+      navigator.clipboard.writeText(text).then(() => say('Đã chép'), fallback);
+    } catch (e) { fallback(); }
+  });
+
+  // Inputs
+  let timer;
+  src.addEventListener('input', () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => { store.set('src', src.value); updateSrcNote(); rebuild(); }, 180);
+  });
+  custom.addEventListener('input', () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => { store.set('custom', custom.value); updateCustomCount(); rebuild(); }, 250);
+  });
+  document.querySelectorAll('input[name="level"]').forEach(r => r.addEventListener('change', () => {
+    store.set('level', level());
+    rebuild();
+  }));
+  homo.addEventListener('change', () => { store.set('homo', homo.checked ? '1' : '0'); rebuild(); });
+  showOrig.addEventListener('change', () => {
+    out.classList.toggle('show-orig', showOrig.checked);
+    store.set('orig', showOrig.checked ? '1' : '0');
+  });
+  $('reroll').addEventListener('click', () => { seed++; rebuild(); say('Đã tạo bản khác'); });
+  $('sample').addEventListener('change', e => {
+    const v = e.target.value;
+    if (!v) return;
+    src.value = SAMPLES[v];
+    e.target.value = '';
+    store.set('src', src.value);
+    seed = 0;
+    updateSrcNote();
+    rebuild();
+  });
+
+  function updateSrcNote() {
+    const isSample = Object.values(SAMPLES).includes(src.value);
+    $('srcNote').textContent = isSample
+      ? 'Đang xem bài mẫu (đã hết bản quyền). Dán lời của bạn vào đây để thay.'
+      : 'Các dòng thẻ như [Verse], [Chorus] được giữ nguyên.';
+  }
+  function updateCustomCount() {
+    const n = Respell.parseCustom(custom.value).size;
+    $('customCount').textContent = n ? `(${n} từ)` : '';
+  }
+
+  // Start from what this viewer had last time, otherwise from a sample.
+  src.value = store.get('src') ?? SAMPLES.amazing;
+  custom.value = store.get('custom') ?? '';
+  const savedLevel = store.get('level');
+  if (savedLevel && document.getElementById('lv-' + savedLevel)) document.getElementById('lv-' + savedLevel).checked = true;
+  if (store.get('homo') === '0') homo.checked = false;
+  if (store.get('orig') === '0') { showOrig.checked = false; out.classList.remove('show-orig'); }
+  updateSrcNote();
+  updateCustomCount();
+  rebuild();
+})();
+</script>
+</body>
+</html>

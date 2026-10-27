@@ -1,0 +1,13 @@
+{
+  "name": "bokin-suno-tool",
+  "private": true,
+  "description": "Bokin tools for making covers on Suno",
+  "scripts": {
+    "test": "node --test tests/engine.test.js",
+    "test:page": "node --test tests/page.test.js",
+    "build:artifact": "node tools/build-artifact.js"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}
