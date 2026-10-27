@@ -59,6 +59,13 @@ Sau đó trang chọn những từ cần đổi sao cho số từ gốc liền n
 
 Không đổi được: các từ rất ngắn như *the, and, a, my, now*. Muốn đổi thì thêm vào Từ điển riêng.
 
+## Tải nhạc từ Suno (Bokin Suno)
+
+Tải các bài trong một workspace Suno về máy, dạng **WAV** (hoặc MP3); chạy lại thì chỉ tải bài mới. Tool mở một
+Chrome thật đã đăng nhập Suno và tải qua đúng nút **Download** của Suno. Chạy trên **Windows** hoặc **Linux**.
+
+Cài đặt và cách dùng: [TAI-NHAC-SUNO.md](TAI-NHAC-SUNO.md).
+
 ## Cho người phát triển
 
 ```
