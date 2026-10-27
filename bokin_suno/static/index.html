@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bokin Suno Master</title>
+<style>
+:root {
+  --bg: #f6f5f2; --panel: #ffffff; --text: #1d1d1f; --muted: #6b6b70; --line: #e3e1dc;
+  --accent: #3b5bdb; --accent-text: #ffffff; --ok: #2b8a3e; --warn: #b26a00; --bad: #c92a2a;
+  --soft: #eef1fb; --code: #f1f0ec;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #141416; --panel: #1d1d21; --text: #ececf0; --muted: #9a9aa3; --line: #2e2e35;
+    --accent: #7b93ff; --accent-text: #0d0d10; --ok: #69db7c; --warn: #ffc078; --bad: #ff8787;
+    --soft: #22263a; --code: #26262c;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 14px 20px; background: var(--panel); border-bottom: 1px solid var(--line); }
+header h1 { font-size: 18px; margin: 0; letter-spacing: .2px; }
+header .spacer { flex: 1; }
+.badge { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--soft); color: var(--muted); }
+main { max-width: 980px; margin: 0 auto; padding: 20px 16px 60px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px; margin-bottom: 16px; }
+.card h2 { font-size: 16px; margin: 0 0 12px; }
+.card h3 { font-size: 14px; margin: 16px 0 8px; color: var(--muted); font-weight: 600; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px 18px; }
+label { display: block; font-size: 13px; color: var(--muted); }
+label > input:not([type=checkbox]), label > select { display: block; width: 100%; margin-top: 4px; }
+input, select { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line);
+  border-radius: 8px; padding: 7px 9px; }
+input[type=checkbox] { width: auto; margin-right: 6px; }
+input[type=range] { padding: 0; accent-color: var(--accent); }
+label .val { float: right; color: var(--text); font-variant-numeric: tabular-nums; }
+.check { display: flex; align-items: center; color: var(--text); font-size: 14px; }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
+button.primary, button.secondary, button.danger { font: inherit; border-radius: 8px; padding: 8px 14px; cursor: pointer; border: 1px solid transparent; }
+button.primary { background: var(--accent); color: var(--accent-text); }
+button.secondary { background: var(--panel); color: var(--text); border-color: var(--line); }
+button.danger { background: none; color: var(--bad); border-color: var(--bad); }
+button:disabled { opacity: .5; cursor: default; }
+button.small { padding: 4px 10px; font-size: 13px; }
+.hint { font-size: 13px; color: var(--muted); }
+.drop { border: 2px dashed var(--line); border-radius: 10px; padding: 18px; text-align: center; cursor: pointer; }
+.drop.over { border-color: var(--accent); background: var(--soft); }
+.drop input { display: none; }
+.picked { font-size: 14px; margin-top: 8px; }
+.presets { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+.preset { text-align: left; background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
+  padding: 10px 12px; cursor: pointer; font: inherit; color: var(--text); }
+.preset b { display: block; font-size: 14px; }
+.preset span { font-size: 12.5px; color: var(--muted); }
+.preset.active { border-color: var(--accent); background: var(--soft); }
+details > summary { cursor: pointer; font-weight: 600; font-size: 15px; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); }
+th { color: var(--muted); font-weight: 500; }
+td.num { font-variant-numeric: tabular-nums; }
+.job { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; }
+.job .top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.job .name { font-weight: 600; flex: 1; word-break: break-word; }
+.state-running, .state-queued { color: var(--accent); } .state-done { color: var(--ok); }
+.state-failed, .state-interrupted { color: var(--bad); }
+.bar { height: 6px; background: var(--soft); border-radius: 3px; overflow: hidden; margin-top: 8px; }
+.bar div { height: 100%; background: var(--accent); width: 0; transition: width .3s; }
+.players { display: grid; gap: 6px; margin-top: 10px; }
+.player { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.player .label { width: 120px; font-size: 13px; color: var(--muted); }
+.player audio { height: 34px; flex: 1 1 260px; }
+.player a { font-size: 13px; color: var(--accent); }
+ul.notes { margin: 8px 0 0; padding-left: 20px; font-size: 13.5px; }
+ul.notes li.warn { color: var(--warn); }
+#toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); max-width: 90vw;
+  background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 8px; display: none; z-index: 9; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Bokin Suno Master</h1>
+  <span class="badge" id="version">…</span>
+  <span class="spacer"></span>
+  <button class="secondary small" id="quit">Tắt app</button>
+</header>
+<main>
+
+<div class="card">
+  <h2>1. Chọn bài hát</h2>
+  <div class="drop" id="songDrop">
+    <input type="file" id="songs" accept="audio/*,.wav,.mp3,.flac,.m4a,.ogg" multiple>
+    <div><b>Kéo thả bài hát vào đây</b> hoặc bấm để chọn (chọn được nhiều bài)</div>
+    <div class="hint">Nên tải bản <b>WAV</b> từ Suno: MP3 đã mất một phần chất lượng trước khi master.</div>
+    <div class="picked" id="songsPicked"></div>
+  </div>
+  <h3>Bài mẫu (không bắt buộc)</h3>
+  <div class="row" style="margin-top:0">
+    <input type="file" id="reference" accept="audio/*,.wav,.mp3,.flac,.m4a,.ogg">
+    <button class="secondary small" id="clearRef">Bỏ bài mẫu</button>
+  </div>
+  <div class="hint">Một bài đã phát hành, cùng thể loại, có tiếng bạn thích. Màu âm và độ rộng stereo
+    của bài bạn sẽ được chỉnh dần về phía bài mẫu.</div>
+</div>
+
+<div class="card">
+  <h2>2. Kiểu master</h2>
+  <div class="presets" id="presets"></div>
+</div>
+
+<div class="card">
+  <details id="custom">
+    <summary>3. Tuỳ chỉnh (không bắt buộc)</summary>
+
+    <h3>Khử lỗi AI</h3>
+    <div class="grid">
+      <label>Shimmer (rè kim loại) <span class="val" id="v_shimmer"></span>
+        <input type="range" id="shimmer" min="0" max="1" step="0.05"></label>
+      <label>Tiếng rít đều <span class="val" id="v_dewhine"></span>
+        <input type="range" id="dewhine" min="0" max="1" step="0.05"></label>
+      <label>Tiếng xì nền <span class="val" id="v_dehiss"></span>
+        <input type="range" id="dehiss" min="0" max="1" step="0.05"></label>
+      <label>Âm "s" chói <span class="val" id="v_deess"></span>
+        <input type="range" id="deess" min="0" max="1" step="0.05"></label>
+    </div>
+    <div class="hint" style="margin-top:6px">Nghe file <b>phần đã khử</b> sau khi master: nếu nghe ra nhạc
+      (không chỉ tiếng rè) thì giảm mức xuống. "Âm s chói" làm cả hi-hat nhỏ đi, chỉ bật khi giọng bị chói.</div>
+
+    <h3>Màu âm (dB)</h3>
+    <div class="grid">
+      <label>Bass (100 Hz) <span class="val" id="v_bass"></span>
+        <input type="range" id="bass" min="-6" max="6" step="0.5"></label>
+      <label>Bớt đục (300 Hz) <span class="val" id="v_mud"></span>
+        <input type="range" id="mud" min="-6" max="3" step="0.5"></label>
+      <label>Bớt gắt (3,5 kHz) <span class="val" id="v_harsh"></span>
+        <input type="range" id="harsh" min="-6" max="3" step="0.5"></label>
+      <label>Độ sáng (10 kHz) <span class="val" id="v_air"></span>
+        <input type="range" id="air" min="-6" max="6" step="0.5"></label>
+    </div>
+
+    <h3>Bài mẫu</h3>
+    <div class="grid">
+      <label>Mức khớp bài mẫu <span class="val" id="v_match"></span>
+        <input type="range" id="match" min="0" max="1" step="0.05"></label>
+      <label class="check"><input type="checkbox" id="match_loudness"> Độ to theo bài mẫu</label>
+    </div>
+
+    <h3>Stereo và độ động</h3>
+    <div class="grid">
+      <label>Bass mono dưới
+        <select id="mono_bass_hz">
+          <option value="0">Tắt</option><option value="80">80 Hz</option><option value="100">100 Hz</option>
+          <option value="120">120 Hz</option><option value="150">150 Hz</option>
+        </select></label>
+      <label>Độ rộng stereo (dB) <span class="val" id="v_width_db"></span>
+        <input type="range" id="width_db" min="-3" max="3" step="0.5"></label>
+      <label>Nén cho bài "dính" <span class="val" id="v_glue"></span>
+        <input type="range" id="glue" min="0" max="1" step="0.05"></label>
+      <label class="check"><input type="checkbox" id="keep_loudness"> Giữ độ to gốc</label>
+      <label>Độ to mục tiêu (LUFS)
+        <input type="number" id="target_lufs" min="-24" max="-6" step="0.5"></label>
+      <label>Trần đỉnh thật (dBTP)
+        <input type="number" id="ceiling_db" min="-3" max="-0.1" step="0.1"></label>
+    </div>
+
+    <h3>Xuất file</h3>
+    <div class="grid">
+      <label>Định dạng
+        <select id="output">
+          <option value="wav24">WAV 24-bit (giữ tần số gốc)</option>
+          <option value="wav16">WAV 16-bit 44,1 kHz (chuẩn CD)</option>
+          <option value="flac24">FLAC 24-bit</option>
+          <option value="mp3">MP3 320 kbps</option>
+        </select></label>
+      <label class="check"><input type="checkbox" id="write_removed"> Ghi file phần đã khử</label>
+    </div>
+  </details>
+</div>
+
+<div class="row" style="margin: 0 0 16px">
+  <button class="primary" id="go" disabled>Master</button>
+  <span class="hint" id="goHint">Chọn bài hát trước.</span>
+</div>
+
+<div class="card">
+  <h2>Kết quả</h2>
+  <div class="hint" id="outDir"></div>
+  <div id="jobs"></div>
+</div>
+
+</main>
+<div id="toast"></div>
+<script>
+const TOKEN = "__BOKIN_TOKEN__";
+const PRESET_TEXT = {
+  streaming: ["Nghe trực tuyến", "-14 LUFS. Spotify, YouTube, TikTok. Nên dùng."],
+  loud: ["To", "-10 LUFS. EDM, nhạc club: to hơn nhưng bớt độ động."],
+  gentle: ["Nhẹ nhàng", "-16 LUFS. Piano, acoustic, ballad."],
+  clean_only: ["Chỉ làm sạch", "Khử lỗi AI, giữ nguyên độ to."],
+};
+const STAGES = { load: "Đọc file", resample: "Đổi tần số mẫu", clean: "Khử lỗi AI", match: "Khớp bài mẫu",
+  tone: "Chỉnh màu âm", glue: "Nén", loudness: "Chỉnh độ to", write: "Ghi file" };
+const STATES = { queued: "Đang chờ", running: "Đang xử lý", done: "Xong", failed: "Lỗi",
+  interrupted: "Bị dừng (app đã tắt)" };
+const NOTES = {
+  clipped_input: "Bài gốc bị clip (méo) ở vài chỗ: master không sửa được phần méo này.",
+  target_not_reached: "Không đạt độ to mục tiêu: limiter sẽ phải ép bài quá mức.",
+  mp3_overs: "Bộ mã hoá MP3 đẩy đỉnh gần 0 dBFS: hạ trần đỉnh xuống -1,5.",
+};
+const CLEAN = ["shimmer", "dehiss", "deess", "dewhine"];
+const EQ = ["bass", "mud", "harsh", "air"];
+const PERCENT = new Set([...CLEAN, "match", "glue"]);
+let info = null, current = null, presetName = "streaming", polling = null;
+
+const $ = (id) => document.getElementById(id);
+function toast(msg) {
+  const t = $("toast"); t.textContent = msg; t.style.display = "block";
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => t.style.display = "none", 5000);
+}
+async function api(path, opts = {}) {
+  opts.headers = { ...(opts.headers || {}), "X-Bokin-Token": TOKEN };
+  const res = await fetch(path, opts);
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.detail || res.statusText);
+  return body;
+}
+const fileUrl = (job, name, download) =>
+  `/api/files/${job}/${encodeURIComponent(name)}?t=${TOKEN}${download ? "&download=true" : ""}`;
+const fmt = (v, d = 1) => (v === null || v === undefined || !isFinite(v)) ? "–" : Number(v).toFixed(d).replace(".", ",");
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+function showValue(id) {
+  const el = $(id), out = $("v_" + id);
+  if (!out) return;
+  const v = Number(el.value);
+  out.textContent = PERCENT.has(id) ? Math.round(v * 100) + "%" : (v > 0 ? "+" : "") + fmt(v);
+}
+
+function fill(settings) {
+  current = JSON.parse(JSON.stringify(settings));
+  for (const k of CLEAN) $(k).value = settings.clean[k];
+  for (const k of EQ) $(k).value = settings.eq[k];
+  for (const k of ["match", "glue", "width_db"]) $(k).value = settings[k];
+  $("mono_bass_hz").value = String(Math.round(settings.mono_bass_hz));
+  $("match_loudness").checked = settings.match_loudness;
+  $("keep_loudness").checked = settings.target_lufs === null;
+  $("target_lufs").value = settings.target_lufs ?? -14;
+  $("target_lufs").disabled = settings.target_lufs === null;
+  $("ceiling_db").value = settings.ceiling_db;
+  $("write_removed").checked = settings.write_removed;
+  document.querySelectorAll("input[type=range]").forEach((el) => showValue(el.id));
+}
+
+function collect() {
+  const s = JSON.parse(JSON.stringify(current));
+  for (const k of CLEAN) s.clean[k] = Number($(k).value);
+  for (const k of EQ) s.eq[k] = Number($(k).value);
+  for (const k of ["match", "glue", "width_db"]) s[k] = Number($(k).value);
+  s.mono_bass_hz = Number($("mono_bass_hz").value);
+  s.match_loudness = $("match_loudness").checked;
+  s.target_lufs = $("keep_loudness").checked ? null : Number($("target_lufs").value);
+  s.ceiling_db = Number($("ceiling_db").value);
+  s.write_removed = $("write_removed").checked;
+  const out = $("output").value;
+  s.format = out === "mp3" ? "mp3" : out.startsWith("flac") ? "flac" : "wav";
+  s.bits = out.endsWith("16") ? 16 : 24;
+  s.sample_rate = out === "wav16" ? 44100 : null;
+  return s;
+}
+
+function renderPresets() {
+  const box = $("presets"); box.innerHTML = "";
+  for (const name of Object.keys(info.presets)) {
+    const [title, text] = PRESET_TEXT[name] || [name, ""];
+    const b = document.createElement("button");
+    b.className = "preset" + (name === presetName ? " active" : "");
+    b.innerHTML = `<b>${esc(title)}</b><span>${esc(text)}</span>`;
+    b.onclick = () => { presetName = name; fill(info.presets[name]); renderPresets(); };
+    box.appendChild(b);
+  }
+}
+
+function pickedSongs() { return Array.from($("songs").files); }
+function updateGo() {
+  const n = pickedSongs().length;
+  $("go").disabled = n === 0;
+  $("go").textContent = n > 1 ? `Master ${n} bài` : "Master";
+  $("goHint").textContent = n ? "" : "Chọn bài hát trước.";
+  $("songsPicked").textContent = pickedSongs().map((f) => f.name).join(", ");
+}
+
+async function start() {
+  const songs = pickedSongs();
+  if (!songs.length) return;
+  const settings = JSON.stringify(collect());
+  const ref = $("reference").files[0];
+  $("go").disabled = true;
+  try {
+    for (const song of songs) {
+      const form = new FormData();
+      form.append("song", song);
+      if (ref) form.append("reference", ref);
+      form.append("settings", settings);
+      await api("/api/jobs", { method: "POST", body: form });
+    }
+    $("songs").value = ""; updateGo();
+    refresh();
+  } catch (err) { toast(err.message); updateGo(); }
+}
+
+function metricsTable(r) {
+  const row = (label, key, d, unit) =>
+    `<tr><td>${label}</td><td class="num">${fmt(r.input[key], d)} ${unit}</td><td class="num">${fmt(r.output[key], d)} ${unit}</td></tr>`;
+  return `<table><tr><th></th><th>Trước</th><th>Sau</th></tr>
+    ${row("Độ to", "lufs", 1, "LUFS")}${row("Đỉnh thật", "true_peak_db", 1, "dBTP")}${row("Độ động (LRA)", "lra", 1, "LU")}</table>`;
+}
+
+function notesList(r) {
+  const items = [];
+  const st = r.stages || {};
+  if (st.clean) {
+    items.push(`Khử lỗi AI: dải cao (trên 3,5 kHz) thay đổi ${fmt(st.clean.highs_change_db)} dB.`);
+    if (st.clean.whines_hz && st.clean.whines_hz.length)
+      items.push(`Đã cắt tiếng rít ở ${st.clean.whines_hz.map((f) => Math.round(f) + " Hz").join(", ")}.`);
+    if (st.clean.deess_frames_pct) items.push(`Giảm âm "s" chói ở ${fmt(st.clean.deess_frames_pct)}% thời lượng.`);
+  }
+  if (st.match) items.push(`Khớp bài mẫu: độ rộng stereo ${fmt(st.match.width_db)} dB` +
+    (st.match.reference_lufs !== undefined ? `, độ to bài mẫu ${fmt(st.match.reference_lufs)} LUFS.` : "."));
+  if (st.glue && st.glue.max_gr_db) items.push(`Nén: giảm trung bình ${fmt(st.glue.avg_gr_db)} dB, tối đa ${fmt(st.glue.max_gr_db)} dB.`);
+  if (st.loudness) items.push(`Độ to: tăng ${fmt(st.loudness.gain_db)} dB; limiter ép tối đa ${fmt(st.loudness.max_gr_db)} dB` +
+    ` (${fmt(st.loudness.limited_pct)}% thời lượng).`);
+  const warn = (r.notes || []).map((n) => `<li class="warn">${esc(NOTES[n] || n)}</li>`).join("");
+  return `<ul class="notes">${items.map((t) => `<li>${esc(t)}</li>`).join("")}${warn}</ul>`;
+}
+
+function playersHtml(job) {
+  const f = job.files, rows = [];
+  const add = (key, label) => f[key] && rows.push(`<div class="player"><span class="label">${label}</span>
+    <audio controls preload="none" data-kind="${key}" src="${fileUrl(job.id, f[key])}"></audio>
+    <a href="${fileUrl(job.id, f[key], true)}">Tải về</a></div>`);
+  add("source", "Bản gốc"); add("master", "Đã master"); add("removed", "Phần đã khử");
+  return `<div class="players">${rows.join("")}</div>
+    <label class="check" style="margin-top:8px"><input type="checkbox" class="fair" checked>
+      So sánh cùng độ to (bản to hơn được vặn nhỏ lại, để tai không bị đánh lừa)</label>`;
+}
+
+function applyFair(el, job) {
+  const on = el.querySelector(".fair")?.checked;
+  const r = job.report;
+  const src = el.querySelector('audio[data-kind="source"]'), mst = el.querySelector('audio[data-kind="master"]');
+  if (!src || !mst || !r) return;
+  src.volume = 1; mst.volume = 1;
+  const diff = r.output.lufs - r.input.lufs;
+  if (!on || !isFinite(diff)) return;
+  if (diff > 0) mst.volume = Math.pow(10, -diff / 20); else src.volume = Math.pow(10, diff / 20);
+}
+
+const rendered = {};
+function renderJobs(list) {
+  const box = $("jobs");
+  if (!list.length) { box.innerHTML = '<div class="hint">Chưa có bài nào.</div>'; return; }
+  for (const el of Array.from(box.children)) if (!el.id) el.remove();
+  const seen = new Set();
+  for (const job of list) {
+    seen.add(job.id);
+    let el = document.getElementById("job-" + job.id);
+    if (!el) {
+      el = document.createElement("div"); el.className = "job"; el.id = "job-" + job.id;
+      box.appendChild(el);
+    }
+    const key = job.state + "|" + job.stage + "|" + job.fraction;
+    if (rendered[job.id] === key) continue;  // unchanged: keep the players as they are
+    rendered[job.id] = key;
+    const stage = job.state === "running" ? ` · ${STAGES[job.stage] || job.stage}` : "";
+    let body = "";
+    if (job.state === "running" || job.state === "queued") {
+      const order = Object.keys(STAGES), i = Math.max(0, order.indexOf(job.stage));
+      const pct = job.state === "queued" ? 0 : Math.min(100, 100 * (i + (job.stage === "clean" ? job.fraction : 0.5)) / order.length);
+      body = `<div class="bar"><div style="width:${pct}%"></div></div>`;
+    } else if (job.state === "done") {
+      body = metricsTable(job.report) + notesList(job.report) + playersHtml(job);
+    } else if (job.error) {
+      body = `<div class="hint">${esc(job.error)}</div>`;
+    }
+    const ref = job.reference ? ` <span class="hint">· bài mẫu: ${esc(job.reference.replace(/^ref_/, ""))}</span>` : "";
+    el.innerHTML = `<div class="top"><span class="name">${esc(job.song)}${ref}</span>
+      <span class="state-${job.state}">${STATES[job.state] || job.state}${esc(stage)}</span>
+      ${job.state === "running" ? "" : '<button class="danger small">Xoá</button>'}</div>${body}`;
+    const del = el.querySelector("button.danger");
+    if (del) del.onclick = async () => {
+      if (!confirm(`Xoá "${job.song}" và các file kết quả của nó?`)) return;
+      try { await api(`/api/jobs/${job.id}`, { method: "DELETE" }); el.remove(); delete rendered[job.id]; }
+      catch (err) { toast(err.message); }
+    };
+    const fair = el.querySelector(".fair");
+    if (fair) { fair.onchange = () => applyFair(el, job); applyFair(el, job); }
+  }
+  // newest first: keep the DOM in list order
+  list.forEach((job) => box.appendChild(document.getElementById("job-" + job.id)));
+  for (const el of Array.from(box.children)) if (!seen.has(el.id.slice(4))) el.remove();
+}
+
+async function refresh() {
+  try {
+    const list = await api("/api/jobs");
+    renderJobs(list);
+    const busy = list.some((j) => j.state === "running" || j.state === "queued");
+    clearTimeout(polling);
+    if (busy) polling = setTimeout(refresh, 1000);
+  } catch (err) { toast(err.message); }
+}
+
+function setupDrop() {
+  const drop = $("songDrop"), input = $("songs");
+  drop.onclick = (e) => { if (e.target !== input) input.click(); };
+  input.onchange = updateGo;
+  drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("over"); };
+  drop.ondragleave = () => drop.classList.remove("over");
+  drop.ondrop = (e) => {
+    e.preventDefault(); drop.classList.remove("over");
+    const dt = new DataTransfer();
+    for (const f of e.dataTransfer.files) dt.items.add(f);
+    input.files = dt.files; updateGo();
+  };
+}
+
+async function init() {
+  info = await api("/api/info");
+  $("version").textContent = "v" + info.version;
+  $("outDir").textContent = "File kết quả nằm trong: " + info.out_dir;
+  renderPresets();
+  fill(info.presets[presetName]);
+  document.querySelectorAll("input[type=range]").forEach((el) => el.oninput = () => showValue(el.id));
+  $("keep_loudness").onchange = () => $("target_lufs").disabled = $("keep_loudness").checked;
+  $("clearRef").onclick = () => { $("reference").value = ""; };
+  $("go").onclick = start;
+  $("quit").onclick = async () => {
+    if (!confirm("Tắt app? Bài đang xử lý sẽ bị dừng.")) return;
+    try { await api("/api/shutdown", { method: "POST" }); } catch (e) {}
+    document.body.innerHTML = '<main><div class="card">Đã tắt app. Bạn có thể đóng trang này.</div></main>';
+  };
+  setupDrop(); updateGo(); refresh();
+}
+init().catch((err) => toast(err.message));
+</script>
+</body>
+</html>
