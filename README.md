@@ -13,7 +13,7 @@ Bài Suno ──► lọc ù thấp ──► khử lỗi AI ──► khớp b�
 | Bước | Làm gì |
 |---|---|
 | Lọc ù thấp | Cắt dưới 25 Hz (tiếng ù, DC), giữ nguyên hình dạng tiếng trống kick. |
-| Khử lỗi AI | **Shimmer**: tiếng rè lấp lánh kiểu kim loại ở dải cao, lỗi đặc trưng của Suno. **Tiếng rít đều**: một tần số cao kêu suốt bài. **Tiếng xì nền** và **âm "s" chói** (tắt sẵn). |
+| Khử lỗi AI | **Shimmer**: tiếng rè lấp lánh kiểu kim loại ở dải cao, lỗi đặc trưng của Suno. **Tiếng rít đều**: một tần số cao kêu suốt bài. **Tiếng xì nền** ("xào xào", tắt sẵn, kiểu Jazz bật 30%) và **âm "s" chói** (tắt sẵn). |
 | Khớp bài mẫu | Nếu bạn đưa một bài đã phát hành làm mẫu, màu âm và độ rộng stereo của bài bạn được chỉnh dần về phía bài mẫu (kiểu Matchering). |
 | EQ | Sáu nút hay dùng cho bài Suno: Bass (100 Hz), Thân âm (180 Hz), Bớt đục (300 Hz), Độ rõ (2,5 kHz), Bớt gắt (3,5 kHz), Độ sáng (10 kHz). |
 | Stereo | Bass dưới 120 Hz chuyển về mono để tiếng trầm chắc, nghe ổn trên điện thoại và loa nhỏ. Có thể nới rộng hoặc thu hẹp stereo. |
@@ -106,7 +106,9 @@ khác, ví dụ `Ubuntu-22.04`), hoặc bấm *Tải về* trong app.
   dài (dài về thời gian) không bị đụng tới.
 - **Tiếng rít đều**, mặc định 50%: chỉ cắt khi một tần số trên 2,5 kHz nổi lên suốt gần hết
   bài với mức ổn định. Nốt nhạc đến rồi đi nên không bị coi là tiếng rít.
-- **Tiếng xì nền**, mặc định tắt: học mức tiếng xì từ những đoạn yên nhất, rồi trừ đi ở dải cao.
+- **Tiếng xì nền** (tiếng "xào xào"), mặc định tắt, kiểu Jazz bật 30%: học mức tiếng xì từ những
+  đoạn yên nhất, rồi trừ đi ở dải cao. Còn nghe xào xào thì tăng lên 50–60%. Tiếng chổi trống,
+  shaker cũng là tiếng "xì" nên sẽ nhỏ đi một chút.
 - **Âm "s" chói**, mặc định tắt: giảm dải 5–10 kHz ở những lúc dải này vọt lên. Chỉ bật khi
   giọng hát bị chói, vì nó cũng làm hi-hat nhỏ đi.
 
@@ -158,6 +160,7 @@ nhạc chơi tay. So với kiểu *Nghe trực tuyến*, kiểu này:
 | Độ dày | 35% | chi tiết nhỏ được nâng lên, đoạn intro nhẹ không bị chìm |
 | Nén "dính" | 15% (thay vì 30%) | giữ độ động của nhạc chơi tay |
 | Shimmer | 40% (thay vì 50%) | tránh làm mất tiếng chổi trống, chuông Giáng sinh |
+| Tiếng xì nền | 30% (thay vì tắt) | độ dày nâng chi tiết nhỏ nên cũng nâng tiếng xì "xào xào"; khử xì bù lại |
 | Bass mono dưới | 100 Hz | contrebass vẫn chắc mà không mất độ rộng của guitar |
 | Limiter | nhả chậm hơn (150 ms) | tiếng contrebass không bị rè khi limiter làm việc |
 
@@ -167,6 +170,11 @@ rồi cả ban nhạc), so với kiểu *Nghe trực tuyến* ở cùng -14 LUFS
 - đỉnh so với độ to (PLR) giữ nguyên khoảng 13 dB: tiếng gảy đàn không bị ép bẹt;
 - dải 2–4 kHz cao hơn khoảng 1 dB, dải 120–300 Hz cao hơn khoảng 0,4 dB;
 - độ động (LRA) giảm từ 5,8 xuống 4,5 LU: dày hơn nhưng vẫn còn chỗ thở.
+
+Trên bài đó có thêm tiếng xì, ở cùng -14 LUFS: kiểu Jazz chưa khử xì làm tiếng xì ở đoạn intro to hơn
+kiểu *Nghe trực tuyến* 1,3 dB; khử xì 30% đưa nó xuống thấp hơn khoảng 4–5 dB, 50% thấp hơn khoảng 5–6 dB.
+Khử xì cũng làm tiếng chổi trống, shaker nhỏ đi một chút, vì chúng cũng là tiếng "xì": nếu thấy mất,
+giảm *Tiếng xì nền*.
 
 Các con số trên đo trên bài giả lập, chưa phải bài Suno thật. Hãy nghe so sánh cùng độ to. Nếu thấy
 quá dày hoặc quá sáng, giảm *Độ dày*, *Độ rõ* hoặc *Độ sáng* trong mục Tuỳ chỉnh.
