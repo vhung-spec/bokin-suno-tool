@@ -132,13 +132,27 @@ ul.notes li.warn { color: var(--warn); }
     <div class="grid">
       <label>Bass (100 Hz) <span class="val" id="v_bass"></span>
         <input type="range" id="bass" min="-6" max="6" step="0.5"></label>
+      <label>Thân âm, dày (180 Hz) <span class="val" id="v_body"></span>
+        <input type="range" id="body" min="-3" max="4" step="0.5"></label>
       <label>Bớt đục (300 Hz) <span class="val" id="v_mud"></span>
         <input type="range" id="mud" min="-6" max="3" step="0.5"></label>
+      <label>Độ rõ (2,5 kHz) <span class="val" id="v_presence"></span>
+        <input type="range" id="presence" min="-3" max="4" step="0.5"></label>
       <label>Bớt gắt (3,5 kHz) <span class="val" id="v_harsh"></span>
         <input type="range" id="harsh" min="-6" max="3" step="0.5"></label>
       <label>Độ sáng (10 kHz) <span class="val" id="v_air"></span>
         <input type="range" id="air" min="-6" max="6" step="0.5"></label>
     </div>
+
+    <h3>Độ dày và độ ấm</h3>
+    <div class="grid">
+      <label>Độ ấm (bão hoà nhẹ) <span class="val" id="v_warmth"></span>
+        <input type="range" id="warmth" min="0" max="1" step="0.05"></label>
+      <label>Độ dày (nén song song) <span class="val" id="v_density"></span>
+        <input type="range" id="density" min="0" max="1" step="0.05"></label>
+    </div>
+    <div class="hint" style="margin-top:6px">Độ ấm thêm hoạ âm nhẹ cho dải trầm-trung (đàn guitar, piano, contrebass, giọng).
+      Độ dày nâng các chi tiết nhỏ (tiếng chổi trống, hơi thở, đuôi vang) mà vẫn giữ lực của tiếng gảy, tiếng trống.</div>
 
     <h3>Bài mẫu</h3>
     <div class="grid">
@@ -199,6 +213,7 @@ const PRESET_TEXT = {
   loud: ["To", "-10 LUFS. EDM, nhạc club: to hơn nhưng bớt độ động."],
   gentle: ["Nhẹ nhàng", "-16 LUFS. Piano, acoustic, ballad."],
   clean_only: ["Chỉ làm sạch", "Khử lỗi AI, giữ nguyên độ to."],
+  jazz: ["Jazz / Bossa nova", "-14 LUFS. Dày, ấm và rõ hơn; hợp cả jazz Giáng sinh."],
 };
 const STAGES = { load: "Đọc file", resample: "Đổi tần số mẫu", clean: "Khử lỗi AI", match: "Khớp bài mẫu",
   tone: "Chỉnh màu âm", glue: "Nén", loudness: "Chỉnh độ to", write: "Ghi file" };
@@ -210,8 +225,9 @@ const NOTES = {
   mp3_overs: "Bộ mã hoá MP3 đẩy đỉnh gần 0 dBFS: hạ trần đỉnh xuống -1,5.",
 };
 const CLEAN = ["shimmer", "dehiss", "deess", "dewhine"];
-const EQ = ["bass", "mud", "harsh", "air"];
-const PERCENT = new Set([...CLEAN, "match", "glue"]);
+const EQ = ["bass", "body", "mud", "presence", "harsh", "air"];
+const AMOUNTS = ["match", "glue", "warmth", "density", "width_db"];
+const PERCENT = new Set([...CLEAN, "match", "glue", "warmth", "density"]);
 let info = null, current = null, presetName = "streaming", polling = null;
 
 const $ = (id) => document.getElementById(id);
@@ -242,7 +258,7 @@ function fill(settings) {
   current = JSON.parse(JSON.stringify(settings));
   for (const k of CLEAN) $(k).value = settings.clean[k];
   for (const k of EQ) $(k).value = settings.eq[k];
-  for (const k of ["match", "glue", "width_db"]) $(k).value = settings[k];
+  for (const k of AMOUNTS) $(k).value = settings[k];
   $("mono_bass_hz").value = String(Math.round(settings.mono_bass_hz));
   $("match_loudness").checked = settings.match_loudness;
   $("keep_loudness").checked = settings.target_lufs === null;
@@ -257,7 +273,7 @@ function collect() {
   const s = JSON.parse(JSON.stringify(current));
   for (const k of CLEAN) s.clean[k] = Number($(k).value);
   for (const k of EQ) s.eq[k] = Number($(k).value);
-  for (const k of ["match", "glue", "width_db"]) s[k] = Number($(k).value);
+  for (const k of AMOUNTS) s[k] = Number($(k).value);
   s.mono_bass_hz = Number($("mono_bass_hz").value);
   s.match_loudness = $("match_loudness").checked;
   s.target_lufs = $("keep_loudness").checked ? null : Number($("target_lufs").value);
@@ -328,6 +344,8 @@ function notesList(r) {
   }
   if (st.match) items.push(`Khớp bài mẫu: độ rộng stereo ${fmt(st.match.width_db)} dB` +
     (st.match.reference_lufs !== undefined ? `, độ to bài mẫu ${fmt(st.match.reference_lufs)} LUFS.` : "."));
+  if (st.warmth && st.warmth.added_db !== null) items.push(`Độ ấm: hoạ âm thêm vào ở mức ${fmt(st.warmth.added_db)} dB so với cả bài.`);
+  if (st.density) items.push(`Độ dày: phần nhỏ nhất được nâng thêm ${fmt(st.density.detail_lift_db)} dB so với phần to nhất.`);
   if (st.glue && st.glue.max_gr_db) items.push(`Nén: giảm trung bình ${fmt(st.glue.avg_gr_db)} dB, tối đa ${fmt(st.glue.max_gr_db)} dB.`);
   if (st.loudness) items.push(`Độ to: tăng ${fmt(st.loudness.gain_db)} dB; limiter ép tối đa ${fmt(st.loudness.max_gr_db)} dB` +
     ` (${fmt(st.loudness.limited_pct)}% thời lượng).`);

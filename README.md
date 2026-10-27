@@ -7,7 +7,7 @@ Quy trình xử lý một bài:
 
 ```
 Bài Suno ──► lọc ù thấp ──► khử lỗi AI ──► khớp bài mẫu / EQ ──► bass mono, độ rộng stereo
-         ──► nén "dính" ──► chỉnh độ to (LUFS) + limiter đỉnh thật ──► WAV / FLAC / MP3
+         ──► độ ấm ──► độ dày ──► nén "dính" ──► chỉnh độ to (LUFS) + limiter đỉnh thật ──► WAV / FLAC / MP3
 ```
 
 | Bước | Làm gì |
@@ -15,8 +15,10 @@ Bài Suno ──► lọc ù thấp ──► khử lỗi AI ──► khớp b�
 | Lọc ù thấp | Cắt dưới 25 Hz (tiếng ù, DC), giữ nguyên hình dạng tiếng trống kick. |
 | Khử lỗi AI | **Shimmer**: tiếng rè lấp lánh kiểu kim loại ở dải cao, lỗi đặc trưng của Suno. **Tiếng rít đều**: một tần số cao kêu suốt bài. **Tiếng xì nền** và **âm "s" chói** (tắt sẵn). |
 | Khớp bài mẫu | Nếu bạn đưa một bài đã phát hành làm mẫu, màu âm và độ rộng stereo của bài bạn được chỉnh dần về phía bài mẫu (kiểu Matchering). |
-| EQ | Bốn nút hay dùng cho bài Suno: Bass, Bớt đục (300 Hz), Bớt gắt (3,5 kHz), Độ sáng (10 kHz). |
+| EQ | Sáu nút hay dùng cho bài Suno: Bass (100 Hz), Thân âm (180 Hz), Bớt đục (300 Hz), Độ rõ (2,5 kHz), Bớt gắt (3,5 kHz), Độ sáng (10 kHz). |
 | Stereo | Bass dưới 120 Hz chuyển về mono để tiếng trầm chắc, nghe ổn trên điện thoại và loa nhỏ. Có thể nới rộng hoặc thu hẹp stereo. |
+| Độ ấm | Bão hoà nhẹ kiểu đèn điện tử ở dải trầm-trung (100 Hz–1,2 kHz): thêm hoạ âm cho đàn guitar, piano, contrebass, giọng. Tắt sẵn, trừ kiểu Jazz. |
+| Độ dày | Nén song song: một bản nén mạnh được trộn dưới bài gốc, nên chi tiết nhỏ (tiếng chổi trống, hơi thở, đuôi vang) được nâng lên mà tiếng gảy, tiếng trống vẫn giữ lực. Tắt sẵn, trừ kiểu Jazz. |
 | Nén "dính" | Nén nhẹ toàn bài cho các nhạc cụ quyện vào nhau. Trống vẫn giữ được lực vì nén phản ứng chậm. |
 | Độ to + limiter | Đưa bài về độ to mục tiêu (LUFS) và giữ **đỉnh thật** (true peak, gồm cả đỉnh nằm giữa các mẫu) dưới trần, thường là -1 dBTP. |
 | Xuất file | WAV 24-bit, WAV 16-bit 44,1 kHz (có dither), FLAC, hoặc MP3 320 kbps. |
@@ -80,6 +82,7 @@ py -m venv .venv
    | To | -10 LUFS | EDM, nhạc club: to hơn nhưng bớt độ động. |
    | Nhẹ nhàng | -16 LUFS | Piano, acoustic, ballad. |
    | Chỉ làm sạch | giữ nguyên | Chỉ khử lỗi AI, không đổi độ to. |
+   | Jazz / Bossa nova | -14 LUFS | Bossa nova, jazz, jazz Giáng sinh: dày, ấm và rõ hơn (xem bên dưới). |
 
    Spotify, YouTube và Apple Music đều tự vặn nhỏ bài nào to hơn khoảng -14 LUFS. Master to
    hơn mức đó trên các nền tảng này không làm bài nghe to hơn, chỉ làm mất độ động.
@@ -110,8 +113,13 @@ khác, ví dụ `Ubuntu-22.04`), hoặc bấm *Tải về* trong app.
 Sau khi master, nghe file **phần đã khử**: nó chỉ nên chứa tiếng rè, rít, xì. Nếu nghe rõ nhạc
 trong đó, hãy giảm mức khử xuống.
 
-**Màu âm** (dB): Bass (100 Hz), Bớt đục (300 Hz, giảm khi bài nghe "bí", "đục"), Bớt gắt
-(3,5 kHz, giảm khi giọng hoặc synth nghe gắt), Độ sáng (10 kHz).
+**Màu âm** (dB): Bass (100 Hz), Thân âm (180 Hz, tăng cho dày), Bớt đục (300 Hz, giảm khi bài
+nghe "bí", "đục"), Độ rõ (2,5 kHz, tăng cho giọng và nhạc cụ nổi lên), Bớt gắt (3,5 kHz, giảm khi
+giọng hoặc synth nghe gắt), Độ sáng (10 kHz).
+
+**Độ dày và độ ấm** (0–100%): *Độ ấm* thêm hoạ âm nhẹ cho dải trầm-trung. Mức thêm tự theo độ to
+của chính bài, nên bài nhỏ hay to đều được "màu" như nhau. Ở 35%, hoạ âm bậc 2 thấp hơn âm gốc
+khoảng 34 dB ở những đoạn to: nghe ấm hơn chứ không méo. *Độ dày* là mức trộn bản nén song song.
 
 **Bài mẫu**: *Mức khớp* (mặc định 70%) cho biết chỉnh màu âm bao xa về phía bài mẫu. Mỗi dải
 tần được tăng tối đa +6 dB và giảm tối đa -9 dB. Từ 12 kHz trở lên, mức tăng tối đa giảm dần
@@ -134,7 +142,34 @@ thể đẩy đỉnh lên một chút.
 .venv/bin/bokin-suno master --help                                            # mọi tuỳ chọn
 ```
 
-Preset trong dòng lệnh: `streaming`, `loud`, `gentle`, `clean_only`.
+Preset trong dòng lệnh: `streaming`, `loud`, `gentle`, `clean_only`, `jazz`.
+
+## Kiểu Jazz / Bossa nova
+
+Dành cho bossa nova, jazz và jazz Giáng sinh: tiếng dày, ấm và rõ hơn, mà vẫn giữ độ động của
+nhạc chơi tay. So với kiểu *Nghe trực tuyến*, kiểu này:
+
+| Bước | Jazz / Bossa nova | Vì sao |
+|---|---|---|
+| Thân âm 180 Hz | +2 dB | thân đàn guitar dây nylon, piano, contrebass dày hơn |
+| Độ rõ 2,5 kHz | +1,5 dB | giọng, kèn, tiếng gảy đàn nổi lên |
+| Độ sáng 10 kHz | +1 dB | độ thoáng của chũm chọe, chuông, tiếng chổi trống |
+| Độ ấm | 35% | hoạ âm nhẹ cho dải trầm-trung |
+| Độ dày | 35% | chi tiết nhỏ được nâng lên, đoạn intro nhẹ không bị chìm |
+| Nén "dính" | 15% (thay vì 30%) | giữ độ động của nhạc chơi tay |
+| Shimmer | 40% (thay vì 50%) | tránh làm mất tiếng chổi trống, chuông Giáng sinh |
+| Bass mono dưới | 100 Hz | contrebass vẫn chắc mà không mất độ rộng của guitar |
+| Limiter | nhả chậm hơn (150 ms) | tiếng contrebass không bị rè khi limiter làm việc |
+
+Đo trên một bài bossa tạo bằng code (guitar nylon, contrebass, chổi trống, chuông; intro nhẹ 8 giây
+rồi cả ban nhạc), so với kiểu *Nghe trực tuyến* ở cùng -14 LUFS:
+- đoạn intro nhẹ gần đoạn đầy đủ hơn 1,3 dB (từ thấp hơn 5,4 dB còn thấp hơn 4,1 dB);
+- đỉnh so với độ to (PLR) giữ nguyên khoảng 13 dB: tiếng gảy đàn không bị ép bẹt;
+- dải 2–4 kHz cao hơn khoảng 1 dB, dải 120–300 Hz cao hơn khoảng 0,4 dB;
+- độ động (LRA) giảm từ 5,8 xuống 4,5 LU: dày hơn nhưng vẫn còn chỗ thở.
+
+Các con số trên đo trên bài giả lập, chưa phải bài Suno thật. Hãy nghe so sánh cùng độ to. Nếu thấy
+quá dày hoặc quá sáng, giảm *Độ dày*, *Độ rõ* hoặc *Độ sáng* trong mục Tuỳ chỉnh.
 
 ## Giới hạn
 

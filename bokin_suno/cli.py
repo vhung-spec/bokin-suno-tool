@@ -29,9 +29,13 @@ def _add_master_options(p):
                        ("dehiss", "remove hiss"), ("deess", "tame harsh S sounds"),
                        ("dewhine", "remove steady whines")):
         p.add_argument(f"--{name}", type=float, metavar="0-1", help=what)
-    for name, what in (("bass", "low shelf at 100 Hz"), ("mud", "bell at 300 Hz"),
+    for name, what in (("bass", "low shelf at 100 Hz"), ("body", "wide bell at 180 Hz (fuller)"),
+                       ("mud", "bell at 300 Hz"), ("presence", "wide bell at 2.5 kHz (clearer)"),
                        ("harsh", "bell at 3.5 kHz"), ("air", "high shelf at 10 kHz")):
         p.add_argument(f"--{name}", type=float, metavar="DB", help=what)
+    p.add_argument("--warmth", type=float, metavar="0-1", help="gentle saturation of the low mids")
+    p.add_argument("--density", type=float, metavar="0-1",
+                   help="parallel compression: quiet details come up")
     p.add_argument("--glue", type=float, metavar="0-1", help="bus compression")
     p.add_argument("--mono-bass", type=float, metavar="HZ", help="mono below this (0: off)")
     p.add_argument("--width", type=float, metavar="DB", help="stereo width change above the bass")
@@ -49,6 +53,7 @@ def settings_from_args(args):
     overrides = {}
     for key, value in (("target_lufs", args.lufs), ("ceiling_db", args.ceiling),
                        ("match", args.match), ("glue", args.glue),
+                       ("warmth", args.warmth), ("density", args.density),
                        ("mono_bass_hz", args.mono_bass), ("width_db", args.width),
                        ("lowcut_hz", args.lowcut), ("sample_rate", args.sr),
                        ("format", args.format), ("bits", args.bits)):
@@ -62,7 +67,8 @@ def settings_from_args(args):
         overrides["write_removed"] = False
     clean = {k: getattr(args, k) for k in ("shimmer", "dehiss", "deess", "dewhine")
              if getattr(args, k) is not None}
-    eq = {k: getattr(args, k) for k in ("bass", "mud", "harsh", "air") if getattr(args, k) is not None}
+    eq = {k: getattr(args, k) for k in ("bass", "body", "mud", "presence", "harsh", "air")
+          if getattr(args, k) is not None}
     return preset(args.preset, clean=clean, eq=eq, **overrides)
 
 

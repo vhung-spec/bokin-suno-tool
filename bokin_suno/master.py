@@ -1,7 +1,8 @@
 """The mastering chain, its settings and presets.
 
     load -> (resample) -> low cut -> clean (shimmer, hiss, S, whines)
-         -> match a reference / EQ -> mono bass, width -> glue compression
+         -> match a reference / EQ -> mono bass, width -> warmth (saturation)
+         -> density (parallel compression) -> glue compression
          -> loudness to target + true-peak limiter -> dither, write
 
 Every stage after loading can be turned off; with everything off and no
@@ -20,8 +21,8 @@ from bokin_suno import __version__, audio_io
 from bokin_suno.analysis import k_weighted_energy, lufs, lufs_from_energy, measure, \
     true_peak_envelope
 from bokin_suno.clean import CleanSettings, clean
-from bokin_suno.dynamics import glue, limit, limiter_gain
-from bokin_suno.tone import EqSettings, apply_curve, eq, lowcut, match_reference, stereo
+from bokin_suno.dynamics import density, glue, limit, limiter_gain
+from bokin_suno.tone import EqSettings, apply_curve, eq, lowcut, match_reference, stereo, warmth
 
 LOUDNESS_TOLERANCE = 0.1  # LU
 SAMPLE_RATES = (32000, 44100, 48000, 88200, 96000)
@@ -39,6 +40,8 @@ class Settings:
     match_loudness: bool = False       # target the reference's loudness instead
     mono_bass_hz: float = 120.0        # 0: off
     width_db: float = 0.0
+    warmth: float = 0.0                # 0-1: gentle saturation of the low mids
+    density: float = 0.0               # 0-1: parallel compression
     glue: float = 0.3                  # 0-1
     release_ms: float = 80.0           # limiter release
     sample_rate: int | None = None     # None: keep
@@ -88,7 +91,8 @@ class Settings:
             raise ValueError("target loudness must be between -40 and -3 LUFS")
         if not -12 <= self.ceiling_db <= 0:
             raise ValueError("ceiling must be between -12 and 0 dBTP")
-        ranges = {"match": (0, 1), "glue": (0, 1), "lowcut_hz": (0, 200), "mono_bass_hz": (0, 300),
+        ranges = {"match": (0, 1), "glue": (0, 1), "warmth": (0, 1), "density": (0, 1),
+                  "lowcut_hz": (0, 200), "mono_bass_hz": (0, 300),
                   "width_db": (-12, 12), "release_ms": (10, 2000)}
         values = {k: getattr(self, k) for k in ranges}
         ranges.update({f"clean.{k}": (0, 1) for k in asdict(self.clean)})
@@ -113,6 +117,15 @@ PRESETS = {
     "gentle": {"target_lufs": -16.0, "ceiling_db": -1.5, "glue": 0.15,
                "clean": {"shimmer": 0.35, "dehiss": 0.0, "deess": 0.0, "dewhine": 0.5}},
     "clean_only": {"target_lufs": None, "glue": 0.0, "mono_bass_hz": 0.0},
+    # Bossa nova, jazz, Christmas jazz: fuller and clearer, dynamics kept.
+    # Body and warmth thicken guitar, piano, upright bass and voice; presence
+    # and air bring them forward; parallel compression lifts the quiet details
+    # (brushes, breaths, tails). Lighter shimmer removal spares brushes and
+    # bells; a slower limiter release keeps the upright bass clean.
+    "jazz": {"target_lufs": -14.0, "ceiling_db": -1.0, "glue": 0.15, "warmth": 0.35, "density": 0.35,
+             "mono_bass_hz": 100.0, "release_ms": 150.0,
+             "clean": {"shimmer": 0.4, "dehiss": 0.0, "deess": 0.0, "dewhine": 0.5},
+             "eq": {"body": 2.0, "presence": 1.5, "air": 1.0}},
 }
 
 
@@ -185,6 +198,10 @@ def process(x: np.ndarray, sr: int, settings: Settings,
     step("tone")
     y = eq(y, sr, settings.eq)
     y = stereo(y, sr, settings.mono_bass_hz, width_db)
+    if settings.warmth > 0:
+        y, report["stages"]["warmth"] = warmth(y, sr, settings.warmth)
+    if settings.density > 0:
+        y, report["stages"]["density"] = density(y, sr, settings.density)
 
     step("glue")
     y, report["stages"]["glue"] = glue(y, sr, settings.glue)

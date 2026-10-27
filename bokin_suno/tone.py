@@ -1,4 +1,5 @@
-"""Tone and stereo: low cut, EQ, matching a reference song, mono bass, width."""
+"""Tone and stereo: low cut, EQ, warmth (saturation), matching a reference
+song, mono bass, width."""
 
 from dataclasses import dataclass
 
@@ -11,6 +12,7 @@ MATCH_TAPS = 8191         # linear-phase FIR, ~6 Hz resolution at 48 kHz
 MATCH_MAX_CUT_DB = 9.0
 MATCH_MAX_BOOST_DB = 6.0
 MATCH_MAX_WIDTH_DB = 3.0
+WARMTH_BAND_HZ = (100.0, 1200.0)
 
 
 def lowcut(x: np.ndarray, sr: int, hz: float) -> np.ndarray:
@@ -51,14 +53,17 @@ def _biquad(kind: str, f0: float, gain_db: float, q: float, sr: int) -> np.ndarr
 
 @dataclass
 class EqSettings:
-    """The four moves most Suno songs need, in dB (0 = off)."""
-    bass: float = 0.0   # low shelf at 100 Hz
-    mud: float = 0.0    # bell at 300 Hz (negative cleans up boxy, muddy mixes)
-    harsh: float = 0.0  # bell at 3.5 kHz (negative tames harsh vocals and synths)
-    air: float = 0.0    # high shelf at 10 kHz
+    """The moves most Suno songs need, in dB (0 = off)."""
+    bass: float = 0.0      # low shelf at 100 Hz
+    mud: float = 0.0       # bell at 300 Hz (negative cleans up boxy, muddy mixes)
+    harsh: float = 0.0     # bell at 3.5 kHz (negative tames harsh vocals and synths)
+    air: float = 0.0       # high shelf at 10 kHz
+    body: float = 0.0      # wide bell at 180 Hz: the body of guitar, piano, upright bass
+    presence: float = 0.0  # wide bell at 2.5 kHz: voices and instruments step forward
 
     def bands(self) -> list[tuple[str, float, float, float]]:
-        bands = [("lowshelf", 100.0, self.bass, 1.0), ("peak", 300.0, self.mud, 1.0),
+        bands = [("lowshelf", 100.0, self.bass, 1.0), ("peak", 180.0, self.body, 0.7),
+                 ("peak", 300.0, self.mud, 1.0), ("peak", 2500.0, self.presence, 0.8),
                  ("peak", 3500.0, self.harsh, 1.2), ("highshelf", 10000.0, self.air, 1.0)]
         return [b for b in bands if abs(b[2]) > 0.01]
 
@@ -69,6 +74,44 @@ def eq(x: np.ndarray, sr: int, settings: EqSettings) -> np.ndarray:
         return x
     sos = np.stack([_biquad(kind, f0, gain, q, sr) for kind, f0, gain, q in bands])
     return signal.sosfilt(sos, x, axis=0)
+
+
+# -- warmth ------------------------------------------------------------------
+
+def _pair(sr: int, lo: float, hi: float) -> np.ndarray:
+    """Butterworth high-pass at lo and low-pass at hi, 2nd order each."""
+    return np.vstack([signal.butter(2, lo, "highpass", fs=sr, output="sos"),
+                      signal.butter(2, hi, "lowpass", fs=sr, output="sos")])
+
+
+def warmth(x: np.ndarray, sr: int, amount: float) -> tuple[np.ndarray, dict]:
+    """Adds the low harmonics of gentle, slightly asymmetric (tube-like)
+    saturation of the low mids (100 Hz-1.2 kHz), `amount` 0-1: the body of
+    guitar, piano, upright bass and voice gets denser and warmer.
+
+    Only what the saturation adds is mixed in, from a zero-phase band, so
+    nothing shifts in phase. The drive follows the band's own level (its
+    loud parts reach the curve's knee), so every song gets the same colour.
+    """
+    stats = {"added_db": None}
+    if amount <= 0:
+        return x, stats
+    band = signal.sosfiltfilt(_pair(sr, *WARMTH_BAND_HZ), x, axis=0)
+    step = max(1, int(0.05 * sr))  # 50 ms blocks
+    power = np.mean(band ** 2, axis=1)
+    blocks = power[: len(power) // step * step].reshape(-1, step).mean(axis=1)
+    if blocks.size == 0 or blocks.max() <= 0:
+        return x, stats
+    ref = np.sqrt(2 * np.percentile(blocks, 95))  # sine peak at the loud parts' level
+    drive, bias = 0.25 + 0.45 * amount, 0.08 + 0.07 * amount  # 2nd harmonic ~-34 dB at 0.35
+    u = band / ref
+    shaped = (np.tanh(drive * u + bias) - np.tanh(bias)) / (drive * (1 - np.tanh(bias) ** 2))
+    # what the curve added; keep its harmonics, drop its DC and fizz
+    added = signal.sosfiltfilt(_pair(sr, 60.0, min(8000.0, 0.45 * sr)), (shaped - u) * ref, axis=0)
+    total = float(np.sum(x ** 2))
+    if total > 0:
+        stats["added_db"] = round(10 * np.log10(max(float(np.sum(added ** 2)), 1e-30) / total), 1)
+    return x + added, stats
 
 
 # -- matching a reference ----------------------------------------------------

@@ -1,7 +1,7 @@
 import numpy as np
 
 from bokin_suno.analysis import db, lufs, true_peak_db, true_peak_envelope
-from bokin_suno.dynamics import glue, limit, limiter_gain
+from bokin_suno.dynamics import density, glue, limit, limiter_gain
 from tests.conftest import SR, music
 
 
@@ -36,6 +36,19 @@ def test_glue_compresses_loud_parts_only():
     quiet_change = db(np.std(y[: len(x) // 2])) - db(np.std(x[: len(x) // 2]))
     loud_change = db(np.std(y[len(x) // 2:])) - db(np.std(x[len(x) // 2:]))
     assert abs(quiet_change) < 0.2 and loud_change < -0.5
+
+
+def test_density_lifts_quiet_parts_and_keeps_peaks():
+    x = music(8.0)
+    x[: len(x) // 2] *= 0.2
+    y, stats = density(x, SR, amount=0.5)
+    gap_x = db(np.std(x[len(x) // 2:])) - db(np.std(x[: len(x) // 2]))
+    gap_y = db(np.std(y[len(x) // 2:])) - db(np.std(y[: len(x) // 2]))
+    assert gap_y < gap_x - 1.5 and stats["detail_lift_db"] > 1.5
+    # never quieter than the song itself (the copy only adds)
+    assert np.all(np.abs(y) >= np.abs(x) - 1e-12)
+    same, _ = density(x, SR, 0)
+    assert same is x
 
 
 def test_glue_off_is_a_no_op():

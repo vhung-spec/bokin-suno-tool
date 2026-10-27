@@ -25,13 +25,27 @@ def test_everything_off_is_transparent(song):
     assert removed is None and report["stages"]["loudness"]["max_gr_db"] == 0
 
 
-@pytest.mark.parametrize("name,target", [("streaming", -14.0), ("loud", -10.0), ("gentle", -16.0)])
+@pytest.mark.parametrize("name,target", [("streaming", -14.0), ("loud", -10.0), ("gentle", -16.0),
+                                         ("jazz", -14.0)])
 def test_presets_hit_loudness_and_ceiling(song, name, target):
     y, removed, report = process(song, SR, preset(name))
     assert lufs(y, SR) == pytest.approx(target, abs=0.15)
     assert true_peak_db(y) <= preset(name).ceiling_db + 1e-6
     assert report["output"]["lufs"] == pytest.approx(target, abs=0.15)
     assert removed is not None and removed.shape == y.shape
+
+
+def test_jazz_is_fuller_than_streaming():
+    # a soft verse, then a full chorus: the jazz preset brings the verse closer
+    x = music(12.0)
+    x[: 6 * SR] *= 0.25
+    gap = {}
+    for name in ("streaming", "jazz"):
+        y, _, report = process(x, SR, preset(name))
+        gap[name] = lufs(y[6 * SR:], SR) - lufs(y[: 6 * SR], SR)
+        assert report["output"]["lufs"] == pytest.approx(-14, abs=0.15)
+    assert gap["jazz"] < gap["streaming"] - 1.0
+    assert {"warmth", "density"} <= set(report["stages"])
 
 
 def test_reference_loudness(song):
@@ -81,4 +95,4 @@ def test_settings_round_trip_and_validation():
         Settings(format="mp3").check(sr=96000)
     with pytest.raises(ValueError):
         preset("nope")
-    assert set(PRESETS) == {"streaming", "loud", "gentle", "clean_only"}
+    assert set(PRESETS) == {"streaming", "loud", "gentle", "clean_only", "jazz"}

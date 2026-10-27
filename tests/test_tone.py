@@ -3,7 +3,7 @@ import pytest
 from scipy import signal
 
 from bokin_suno.analysis import average_spectrum, side_mid_ratio
-from bokin_suno.tone import EqSettings, apply_curve, eq, lowcut, match_reference, stereo
+from bokin_suno.tone import EqSettings, apply_curve, eq, lowcut, match_reference, stereo, warmth
 from tests.conftest import SR, band_energy, music
 
 
@@ -24,6 +24,10 @@ def test_eq_bands_hit_their_frequencies():
     assert gain_db(y, x, 15000, 18000) == pytest.approx(3, abs=0.5)
     assert abs(gain_db(y, x, 1000, 1500)) < 0.6
     assert eq(x, SR, EqSettings()) is x
+    y = eq(x, SR, EqSettings(body=2, presence=2))
+    assert gain_db(y, x, 170, 190) == pytest.approx(2, abs=0.4)
+    assert gain_db(y, x, 2400, 2600) == pytest.approx(2, abs=0.4)
+    assert abs(gain_db(y, x, 700, 900)) < 0.6
 
 
 def test_lowcut_removes_rumble_and_dc():
@@ -75,3 +79,23 @@ def test_apply_curve_keeps_timing():
 def test_average_spectrum_shape():
     f, p = average_spectrum(noise(), SR)
     assert f[0] == 0 and f[-1] == SR / 2 and len(f) == len(p)
+
+
+def test_warmth_adds_low_harmonics_and_no_dc():
+    t = np.arange(SR * 2) / SR
+    x = np.repeat((0.3 * np.sin(2 * np.pi * 220 * t))[:, None], 2, axis=1)
+    y, stats = warmth(x, SR, 0.35)
+    spectrum = np.abs(np.fft.rfft(y[SR // 2: SR // 2 + SR, 0] * np.hanning(SR)))
+    h2, h3 = (20 * np.log10(spectrum[f] / spectrum[220]) for f in (440, 660))
+    assert -40 < h2 < -28 and -45 < h3 < -32  # audible colour, not distortion
+    assert abs(y.mean()) < 1e-4 and stats["added_db"] < -20
+    same, _ = warmth(x, SR, 0)
+    assert same is x
+
+
+def test_warmth_follows_the_song_level():
+    t = np.arange(SR * 2) / SR
+    loud = np.repeat((0.5 * np.sin(2 * np.pi * 200 * t))[:, None], 2, axis=1)
+    _, a = warmth(loud, SR, 0.5)
+    _, b = warmth(loud * 0.05, SR, 0.5)
+    assert a["added_db"] == pytest.approx(b["added_db"], abs=0.5)
