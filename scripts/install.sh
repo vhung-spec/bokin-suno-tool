@@ -37,7 +37,7 @@ if grep -qi microsoft /proc/version 2>/dev/null; then
   bat="$(wslpath -u "$desktop_win")/Bokin Suno Master.bat"
   distro_arg=""
   [ -n "${WSL_DISTRO_NAME:-}" ] && distro_arg="-d $WSL_DISTRO_NAME "
-  printf '@echo off\r\ntitle Bokin Suno Master\r\nwsl.exe %s--cd "%s" -- ./.venv/bin/bokin-suno app --open\r\n' \
+  printf '@echo off\r\ntitle Bokin Suno Master\r\nwsl.exe %s--cd "%s" -- ./.venv/bin/bokin-suno app\r\n' \
     "$distro_arg" "$ROOT" > "$bat"
   echo "Desktop shortcut: $desktop_win\\Bokin Suno Master.bat"
 else
@@ -47,7 +47,7 @@ else
 [Desktop Entry]
 Type=Application
 Name=Bokin Suno Master
-Exec=$ROOT/.venv/bin/bokin-suno app --open
+Exec=$ROOT/.venv/bin/bokin-suno app
 Path=$ROOT
 Terminal=true
 Categories=AudioVideo;Audio;
@@ -55,4 +55,4 @@ EOF
   echo "Menu entry: $apps/bokin-suno-master.desktop"
 fi
 
-echo "Done. Start the app with the shortcut, or: $ROOT/.venv/bin/bokin-suno app --open"
+echo "Done. Start the app with the shortcut, or: $ROOT/.venv/bin/bokin-suno app"

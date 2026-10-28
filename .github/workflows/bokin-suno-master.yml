@@ -1,0 +1,102 @@
+# Builds the Bokin Suno Master installer on Windows, tests it, and publishes it as a GitHub Release of this public
+# repository: BokinSunoMaster-Setup-<version>.exe and its manifest bokin-suno-master-latest.json, tag app-v<version>.
+# The installed apps update from there (bokin_suno/updater.py: they read the newest release's manifest, a plain
+# download, not the API). Built like Bokin FX's workflow (vhung-spec/bokin-video-fx), with the workflow's own token
+# instead of a secret, since the releases live in this repository.
+name: Bokin Suno Master
+
+on:
+  push:
+    branches: [claude/suno-ai-mastering-tool-rfg0o5]
+  workflow_dispatch:
+
+permissions:
+  contents: write  # publishing a release in this repository
+
+concurrency:
+  group: bokin-suno-master-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the app and the build tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[app,dev]" truststore==0.10.1 pyinstaller==6.11.1 Pillow==11.0.0
+
+      - name: Unit tests
+        run: python -m pytest -q
+
+      - name: Version
+        shell: pwsh
+        run: |
+          $v = "1.0.${{ github.run_number }}"
+          Set-Content -Path bokin_suno/version.txt -Value $v -NoNewline
+          "APP_VERSION=$v" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Build the app folder
+        run: |
+          python packaging/make_icon.py
+          pyinstaller packaging/BokinSunoMaster.spec --noconfirm
+
+      - name: Self-test of the built app (masters a test song in every format, activation with a test key)
+        shell: pwsh
+        run: |
+          $p = Start-Process dist/BokinSunoMaster/BokinSunoMaster.exe -ArgumentList "--selftest" -Wait -PassThru
+          Get-Content "$env:APPDATA/Bokin/SunoMaster/app.log"
+          if ($p.ExitCode -ne 0) { throw "selftest failed ($($p.ExitCode))" }
+
+      - name: Build the installer
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress }
+          & $iscc "/DAppVersion=$env:APP_VERSION" packaging/BokinSunoMaster.iss
+          if ($LASTEXITCODE -ne 0) { throw "iscc failed" }
+          Get-ChildItem dist/*.exe | Format-Table Name, Length
+
+      - name: Install test (fresh install, the app answers, then setup again while it runs)
+        run: python packaging/ci_install_test.py install dist/BokinSunoMaster-Setup-${{ env.APP_VERSION }}.exe
+
+      - name: Build a next version (only for the update test, never published)
+        shell: pwsh
+        run: |
+          $next = "$env:APP_VERSION.1"
+          Set-Content -Path bokin_suno/version.txt -Value $next -NoNewline
+          pyinstaller packaging/BokinSunoMaster.spec --noconfirm --distpath dist-next --workpath build-next
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=$next" "/DDistDir=$PWD\dist-next" packaging/BokinSunoMaster.iss
+          if ($LASTEXITCODE -ne 0) { throw "iscc failed" }
+          Set-Content -Path bokin_suno/version.txt -Value $env:APP_VERSION -NoNewline
+          "NEXT_VERSION=$next" | Out-File -FilePath $env:GITHUB_ENV -Append
+          Get-ChildItem dist-next/BokinSunoMaster-Setup-*.exe | Format-Table Name, Length
+
+      - name: Update test (finds, downloads and checks the next version; "Cập nhật ngay" installs it and restarts)
+        run: python packaging/ci_install_test.py update dist-next/BokinSunoMaster-Setup-${{ env.NEXT_VERSION }}.exe ${{ env.NEXT_VERSION }}
+
+      # (the release holds the installer: this copy is kept a week, and a full storage quota does not stop the release)
+      - uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with:
+          name: BokinSunoMaster-Setup-${{ env.APP_VERSION }}
+          path: dist/BokinSunoMaster-Setup-*.exe
+          retention-days: 7
+
+      - name: Publish a release (in this repository)
+        if: github.ref == 'refs/heads/claude/suno-ai-mastering-tool-rfg0o5'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $file = (Get-ChildItem dist/BokinSunoMaster-Setup-*.exe).FullName
+          # (the notes, and the manifest the installed apps read first: bokin-suno-master-latest.json, bokin_suno/updater.py)
+          python packaging/release_notes.py $file $env:APP_VERSION release
+          gh release create "app-v$env:APP_VERSION" $file release/bokin-suno-master-latest.json --repo ${{ github.repository }} --target ${{ github.sha }} --title "Bokin Suno Master $env:APP_VERSION" --notes-file release/notes.md

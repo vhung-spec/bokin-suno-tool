@@ -28,46 +28,50 @@ Mỗi bài cho ra ba file:
 - `<tên>_removed.wav`: **phần đã khử** (shimmer, tiếng rít...), để bạn nghe xem công cụ đã bỏ đi những gì;
 - `<tên>_report.json`: số đo trước/sau và việc từng bước đã làm.
 
-## Cài đặt
+## Cài đặt (Windows)
 
-### Windows (qua WSL2, giống app Bokin Music)
+1. Mở trang **[Bản phát hành mới nhất](https://github.com/vhung-spec/bokin-suno-tool/releases/latest)**, tải file
+   **BokinSunoMaster-Setup-….exe** ở mục *Assets*.
+2. Bấm đúp file vừa tải để cài. Không cần quyền quản trị. Nếu Windows hiện "Windows protected your PC", bấm
+   **More info** → **Run anyway** (bộ cài chưa có chữ ký số).
+3. Mở **Bokin Suno Master** từ Desktop hoặc menu Start. App mở trong một cửa sổ riêng.
 
-1. Nếu máy chưa có WSL2 + Ubuntu: mở PowerShell bằng quyền Administrator, chạy `wsl --install`,
-   khởi động lại máy, rồi mở **Ubuntu** để tạo tên người dùng và mật khẩu.
-2. Trong cửa sổ Ubuntu, chạy:
-   ```bash
-   git clone -b claude/suno-ai-mastering-tool-rfg0o5 https://github.com/vhung-spec/bokin-suno-tool.git ~/bokin-suno-tool
-   ~/bokin-suno-tool/scripts/install.sh
-   ```
-   Script cài Python, ffmpeg và thư viện, rồi tạo biểu tượng **Bokin Suno Master** trên Desktop.
-3. Bấm đúp **Bokin Suno Master**. Một cửa sổ đen hiện log của app, và trình duyệt tự mở trang
-   app. Đóng cửa sổ đen hoặc bấm *Tắt app* để tắt.
+### Kích hoạt (lần đầu)
+
+App dùng key **Bokin License**, chung với các app Bokin khác:
+
+1. Lần đầu mở, app hiện **Mã máy** (dạng `ABCD-EFGH-IJKL-MNOP`). Bấm **Chép mã máy**.
+2. Trong **Key Center**, cấp key cho mã máy đó với sản phẩm **Bokin Suno Master** (`suno-master`). Key gói (nhiều
+   app) cũng được: kích hoạt ở một app là các app khác trong gói trên máy đó cùng mở.
+3. Dán key vào ô **Key** rồi bấm **Kích hoạt**.
+
+### Tự cập nhật
+
+- App tự kiểm tra bản mới khi mở, rồi 5 phút một lần, và tự tải về ở chế độ nền.
+- Có bản mới thì góc trên hiện nút **Có bản mới … · Cập nhật ngay**. Bấm vào là app tắt, cài bản mới, rồi tự mở lại
+  (khoảng nửa phút). Không bấm thì bản mới được cài khi bạn đóng app.
+- Bài đang master dở thì app chờ xong mới cài.
+- Bản mới do GitHub tự build, chạy thử (cài thật, cài đè, tự cập nhật) rồi mới phát hành, mỗi lần có thay đổi.
+
+Bài đã master nằm trong thư mục **Nhạc\Bokin Suno Master** (`Music\Bokin Suno Master`), mỗi bài một thư mục con. Nút
+**Thư mục kết quả** và **Mở thư mục** trong app mở thẳng thư mục đó. Gỡ app hay cập nhật không xoá các bài này.
 
 Công cụ chỉ cần CPU, không cần GPU. Trên máy chạy thử (một máy chủ đám mây khá chậm), một bài
 3 phút mất khoảng 30 giây. Máy tính thường sẽ nhanh hơn.
 
-### Linux hoặc macOS
+## Chạy từ mã nguồn (WSL2, Linux, macOS)
+
+Bản chạy từ mã nguồn cũng cần key (Mã máy của Linux/WSL khác Mã máy của Windows trên cùng máy), và không tự cập
+nhật: lấy bản mới bằng `git pull`.
 
 ```bash
 git clone -b claude/suno-ai-mastering-tool-rfg0o5 https://github.com/vhung-spec/bokin-suno-tool.git ~/bokin-suno-tool
-cd ~/bokin-suno-tool
-python3 -m venv .venv && .venv/bin/pip install -e ".[app]"
-.venv/bin/bokin-suno app --open
+~/bokin-suno-tool/scripts/install.sh      # WSL2/Ubuntu: tạo biểu tượng trên Desktop của Windows
+~/bokin-suno-tool/.venv/bin/bokin-suno app
 ```
 
-Trên Linux có thể chạy `scripts/install.sh` thay cho các lệnh trên: script tự tạo mục trong menu ứng dụng.
-
-### Windows không dùng WSL (chưa chạy thử)
-
-Cài [Python 3.11+](https://www.python.org/downloads/) và nhớ tick *Add python.exe to PATH*.
-Tải mã nguồn về (nút **Code → Download ZIP** trên GitHub, nhánh `claude/suno-ai-mastering-tool-rfg0o5`),
-giải nén, mở PowerShell trong thư mục đó rồi chạy:
-
-```powershell
-py -m venv .venv
-.venv\Scripts\pip install -e ".[app]"
-.venv\Scripts\bokin-suno app --open
-```
+Trên macOS, thay dòng `install.sh` bằng `python3 -m venv .venv && .venv/bin/pip install -e ".[app]"` trong thư mục
+`~/bokin-suno-tool`.
 
 ## Cách dùng app
 
@@ -94,9 +98,8 @@ py -m venv .venv
 Ô **So sánh cùng độ to** (bật sẵn) vặn nhỏ bản to hơn khi nghe trong app. Tai người luôn thấy
 bản to hơn là "hay hơn", nên phải nghe ở cùng độ to mới biết master có thật sự tốt hơn không.
 
-File kết quả nằm trong thư mục `outputs/` của dự án, mỗi bài một thư mục con. Trong WSL, mở
-bằng Explorer tại `\\wsl$\Ubuntu\home\<tên bạn>\bokin-suno-tool\outputs` (tên `Ubuntu` có thể
-khác, ví dụ `Ubuntu-22.04`), hoặc bấm *Tải về* trong app.
+File kết quả nằm trong thư mục **Music\Bokin Suno Master**, mỗi bài một thư mục con (bấm *Thư mục kết quả*, hoặc
+*Tải về* ở từng bài).
 
 ## Các tuỳ chỉnh
 
@@ -231,5 +234,20 @@ Mã nguồn nằm trong `bokin_suno/`:
 | `dynamics.py` | Nén và limiter đỉnh thật |
 | `analysis.py` | Đo độ to, đỉnh thật, phổ |
 | `audio_io.py` | Đọc/ghi file |
-| `app.py`, `static/index.html` | App web |
+| `app.py`, `static/index.html` | Máy chủ cục bộ và trang của app (màn hình kích hoạt, nút cập nhật) |
+| `desktop.py` | App trên máy: cửa sổ riêng, một bản chạy, tự tắt, cài bản mới khi tắt, `--close` cho bộ cài |
+| `licensing.py` | Kiểm tra key Bokin License (sản phẩm `suno-master`) |
+| `updater.py` | Tự cập nhật từ Releases của kho này |
+| `selftest.py` | `BokinSunoMaster.exe --selftest`: kiểm tra bản build từ đầu đến cuối |
 | `cli.py` | Dòng lệnh |
+
+`bokin_license/` là thư viện bản quyền chung của các app Bokin, chép nguyên từ kho Bokin License (`VENDORED.txt`).
+Không sửa bản chép ở đây: sửa ở kho đó rồi chép lại.
+
+Đóng gói Windows nằm trong `packaging/` (PyInstaller, Inno Setup, biểu tượng "Su" của bộ logo Bokin). Mỗi lần đẩy
+lên nhánh `claude/suno-ai-mastering-tool-rfg0o5`, workflow `.github/workflows/bokin-suno-master.yml` chạy trên
+Windows của GitHub:
+
+1. Kiểm thử, build app bằng PyInstaller, chạy `--selftest` trên bản đã build, rồi build bộ cài Inno Setup.
+2. Cài thật, cài đè lúc app đang chạy, rồi thử tự cập nhật lên bản `N.1` với một GitHub giả.
+3. Phát hành Release `app-v1.0.<số lần chạy>` ngay trong kho này (kèm `bokin-suno-master-latest.json` mà app đọc).

@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Bokin Suno Master</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Crect%20width%3D%2264%22%20height%3D%2264%22%20rx%3D%2214.72%22%20fill%3D%22%236FD98A%22/%3E%3Cpath%20fill%3D%22%230A3218%22%20fill-rule%3D%22evenodd%22%20d%3D%22M17.5%2056.1Q15.4%2056.1%2013.9%2055.6Q12.5%2055.1%2011.5%2054.3Q10.5%2053.5%209.9%2052.6Q9.4%2051.8%209.1%2051.0Q8.8%2050.2%208.8%2049.7Q8.7%2049.2%208.7%2049.2L13.6%2049.2Q13.6%2049.2%2013.7%2049.6Q13.8%2050.1%2014.2%2050.6Q14.6%2051.2%2015.5%2051.6Q16.3%2052.1%2017.7%2052.1Q19.5%2052.1%2020.2%2051.4Q21.0%2050.7%2021.0%2049.8Q21.0%2048.9%2020.4%2048.5Q19.8%2048.0%2018.5%2047.7L15.8%2047.3Q14.0%2046.9%2012.5%2046.3Q10.9%2045.6%2010.0%2044.4Q9.1%2043.1%209.1%2041.1Q9.1%2039.2%2010.0%2037.8Q11.0%2036.3%2012.8%2035.5Q14.6%2034.7%2017.1%2034.7Q19.0%2034.7%2020.3%2035.1Q21.7%2035.6%2022.6%2036.3Q23.5%2037.0%2024.0%2037.8Q24.6%2038.6%2024.8%2039.4Q25.1%2040.1%2025.2%2040.6Q25.3%2041.0%2025.3%2041.0L20.5%2041.0Q20.5%2041.0%2020.4%2040.7Q20.3%2040.3%2019.9%2039.8Q19.6%2039.4%2018.9%2039.0Q18.2%2038.6%2016.9%2038.6Q15.3%2038.6%2014.6%2039.4Q13.8%2040.1%2013.8%2040.9Q13.8%2041.7%2014.6%2042.2Q15.4%2042.6%2016.6%2042.9L19.5%2043.4Q21.3%2043.7%2022.7%2044.4Q24.1%2045.1%2025.0%2046.4Q25.9%2047.6%2025.9%2049.5Q25.9%2051.3%2024.9%2052.8Q23.9%2054.4%2022.1%2055.2Q20.2%2056.1%2017.5%2056.1ZM32.0%2056.1Q30.4%2056.1%2029.4%2055.4Q28.4%2054.7%2027.9%2053.6Q27.4%2052.4%2027.4%2051.0L27.4%2040.9L32.2%2040.9L32.2%2050.0Q32.2%2050.9%2032.7%2051.5Q33.2%2052.2%2034.2%2052.2Q35.4%2052.2%2035.9%2051.4Q36.3%2050.6%2036.3%2049.6L36.3%2040.9L41.2%2040.9L41.2%2055.8L36.3%2055.8L36.3%2053.7L36.2%2053.7Q35.6%2054.7%2034.6%2055.4Q33.6%2056.1%2032.0%2056.1Z%22/%3E%3C/svg%3E">
 <style>
 :root {
   --bg: #f6f5f2; --panel: #ffffff; --text: #1d1d1f; --muted: #6b6b70; --line: #e3e1dc;
@@ -18,6 +19,7 @@
   }
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body { margin: 0; background: var(--bg); color: var(--text);
   font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
 header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
@@ -75,6 +77,15 @@ td.num { font-variant-numeric: tabular-nums; }
 .player a { font-size: 13px; color: var(--accent); }
 ul.notes { margin: 8px 0 0; padding-left: 20px; font-size: 13.5px; }
 ul.notes li.warn { color: var(--warn); }
+.update { cursor: pointer; border: 0; font: inherit; }
+.update.ready { background: var(--accent); color: var(--accent-text); padding: 4px 10px; font-weight: 600; }
+.update.warn { color: var(--warn); }
+#licence .machine { font: 600 20px/1.3 ui-monospace, Consolas, monospace; letter-spacing: 1px; user-select: all; }
+#licence textarea { width: 100%; min-height: 84px; font: 14px ui-monospace, Consolas, monospace; color: var(--text);
+  background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px; margin-top: 6px; }
+#licence ol { padding-left: 20px; font-size: 14px; }
+.notice.bad { border-left: 3px solid var(--bad); }
+.notice { padding: 10px 12px; border-radius: 8px; background: var(--soft); font-size: 14px; margin: 10px 0; }
 #toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); max-width: 90vw;
   background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 8px; display: none; z-index: 9; }
 </style>
@@ -83,11 +94,31 @@ ul.notes li.warn { color: var(--warn); }
 <header>
   <h1>Bokin Suno Master</h1>
   <span class="badge" id="version">…</span>
+  <button class="badge update" id="update" hidden></button>
   <span class="spacer"></span>
+  <button class="secondary small" id="openOut" hidden>Thư mục kết quả</button>
   <button class="secondary small" id="quit">Tắt app</button>
 </header>
 <main>
 
+<div class="card" id="licence" hidden>
+  <h2>Kích hoạt Bokin Suno Master</h2>
+  <div class="hint" id="licenceWhy"></div>
+  <ol>
+    <li>Gửi <b>Mã máy</b> dưới đây cho người bán (bấm "Chép mã máy").</li>
+    <li>Dán <b>key</b> nhận được vào ô bên dưới rồi bấm <b>Kích hoạt</b>.</li>
+  </ol>
+  <div class="row" style="margin-top:4px">
+    <span class="machine" id="machine">…</span>
+    <button class="secondary small" id="copyMachine">Chép mã máy</button>
+  </div>
+  <label style="margin-top:12px">Key<textarea id="licenceKey" placeholder="BOKIN-…" spellcheck="false"></textarea></label>
+  <div class="row"><button class="primary" id="activate">Kích hoạt</button>
+    <span class="hint">Một key cho nhiều app Bokin: kích hoạt ở một app là các app khác trong gói cũng mở.</span></div>
+</div>
+
+<div id="appBody">
+<div class="notice" id="expiry" hidden></div>
 <div class="card">
   <h2>1. Chọn bài hát</h2>
   <div class="drop" id="songDrop">
@@ -203,6 +234,7 @@ ul.notes li.warn { color: var(--warn); }
   <div class="hint" id="outDir"></div>
   <div id="jobs"></div>
 </div>
+</div>
 
 </main>
 <div id="toast"></div>
@@ -238,10 +270,92 @@ function toast(msg) {
 }
 async function api(path, opts = {}) {
   opts.headers = { ...(opts.headers || {}), "X-Bokin-Token": TOKEN };
+  if (opts.json !== undefined) {
+    opts.body = JSON.stringify(opts.json);
+    opts.headers["Content-Type"] = "application/json";
+    opts.method = opts.method || "POST";
+  }
   const res = await fetch(path, opts);
   const body = await res.json().catch(() => ({}));
+  if (res.status === 403 && body.license) { showLicence(); throw new Error(body.detail); }
   if (!res.ok) throw new Error(body.detail || res.statusText);
   return body;
+}
+
+// ------------------------------------------------------------------ licence
+async function showLicence() {
+  let lic = {};
+  try { lic = await api("/api/license"); } catch (e) {}
+  if (lic.licensed) return true;
+  $("licence").hidden = false;
+  $("appBody").hidden = true;
+  $("machine").textContent = lic.machine || "…";
+  $("licenceWhy").textContent = lic.message || "";
+  return false;
+}
+async function checkLicence() {
+  const lic = await api("/api/license");
+  if (!lic.licensed) { await showLicence(); return false; }
+  $("licence").hidden = true;
+  $("appBody").hidden = false;
+  if (lic.expires) {
+    const days = Math.ceil((new Date(lic.expires) - new Date()) / 86400000);
+    $("expiry").hidden = days > lic.soon;
+    $("expiry").textContent = `Key của máy này hết hạn ngày ${new Date(lic.expires).toLocaleDateString("vi-VN")} ` +
+      `(còn ${days} ngày). Liên hệ người bán để gia hạn.`;
+  }
+  return true;
+}
+async function activate() {
+  const key = $("licenceKey").value.trim();
+  if (!key) { toast("Hãy dán key nhận được từ người bán."); return; }
+  $("activate").disabled = true;
+  try {
+    const lic = await api("/api/license", { json: { key } });
+    if (lic.licensed) { toast("Đã kích hoạt. Cảm ơn bạn!"); location.reload(); }
+  } catch (err) { toast(err.message); }
+  $("activate").disabled = false;
+}
+
+// ------------------------------------------------------------------- update
+const REASONS = { limit: "GitHub đang giới hạn lượt hỏi, thử lại sau", github: "GitHub báo lỗi",
+  cert: "không kiểm tra được chứng chỉ của GitHub (xem lại giờ của máy, phần mềm diệt virus)",
+  offline: "không kết nối được Internet", download: "tải bản mới bị lỗi", other: "có lỗi" };
+let updateState = null;
+function renderUpdate(u) {
+  updateState = u;
+  const b = $("update");
+  b.className = "badge update";
+  b.hidden = !u.auto;
+  if (!u.auto) return;
+  if (u.ready) { b.textContent = `Có bản mới ${u.available} · Cập nhật ngay`; b.classList.add("ready"); }
+  else if (u.downloading) b.textContent = `Đang tải bản ${u.downloading}…`;
+  else if (u.reason) { b.textContent = "Chưa kiểm tra được bản mới"; b.title = REASONS[u.reason] || u.error || ""; b.classList.add("warn"); }
+  else b.textContent = u.checked ? "Đang dùng bản mới nhất" : "Đang kiểm tra bản mới…";
+}
+async function pollUpdate() {
+  try { renderUpdate(await api("/api/update")); } catch (e) {}
+}
+async function onUpdateClick() {
+  const u = updateState || {};
+  if (!u.ready) {
+    try { renderUpdate(await api("/api/update/check", { json: {} })); toast("Đang kiểm tra bản mới…"); } catch (e) { toast(e.message); }
+    return;
+  }
+  if (!confirm(`Cài bản ${u.available} ngay? App sẽ tắt rồi tự mở lại sau khoảng nửa phút.`)) return;
+  try {
+    await api("/api/update/install", { json: {} });
+    document.body.innerHTML = '<main><div class="card"><h2>Đang cài bản mới…</h2>' +
+      '<p class="hint">App sẽ tự mở lại. Cửa sổ này sẽ tự tải lại khi app chạy lại.</p></div></main>';
+    const old = u.current;
+    const wait = setInterval(async () => {
+      try {
+        const r = await fetch("/api/ping");
+        const p = await r.json();
+        if (p.version && p.version !== old) { clearInterval(wait); location.reload(); }
+      } catch (e) {}
+    }, 2000);
+  } catch (e) { toast(e.message); }
 }
 const fileUrl = (job, name, download) =>
   `/api/files/${job}/${encodeURIComponent(name)}?t=${TOKEN}${download ? "&download=true" : ""}`;
@@ -406,7 +520,10 @@ function renderJobs(list) {
     const ref = job.reference ? ` <span class="hint">· bài mẫu: ${esc(job.reference.replace(/^ref_/, ""))}</span>` : "";
     el.innerHTML = `<div class="top"><span class="name">${esc(job.song)}${ref}</span>
       <span class="state-${job.state}">${STATES[job.state] || job.state}${esc(stage)}</span>
+      ${info.desktop && job.state === "done" ? '<button class="secondary small open">Mở thư mục</button>' : ""}
       ${job.state === "running" ? "" : '<button class="danger small">Xoá</button>'}</div>${body}`;
+    const open = el.querySelector("button.open");
+    if (open) open.onclick = () => api("/api/open", { json: { job: job.id } }).catch((err) => toast(err.message));
     const del = el.querySelector("button.danger");
     if (del) del.onclick = async () => {
       if (!confirm(`Xoá "${job.song}" và các file kết quả của nó?`)) return;
@@ -447,7 +564,18 @@ function setupDrop() {
 
 async function init() {
   info = await api("/api/info");
-  $("version").textContent = "v" + info.version;
+  $("version").textContent = info.version === "dev" ? "bản phát triển" : "v" + info.version;
+  $("activate").onclick = activate;
+  $("copyMachine").onclick = () => {
+    navigator.clipboard.writeText($("machine").textContent).then(() => toast("Đã chép mã máy."),
+      () => toast("Hãy bôi đen mã máy rồi bấm Ctrl+C."));
+  };
+  $("update").onclick = onUpdateClick;
+  $("openOut").hidden = !info.desktop;
+  $("openOut").onclick = () => api("/api/open", { json: {} }).catch((err) => toast(err.message));
+  pollUpdate();
+  setInterval(pollUpdate, 60000);  // also tells the installed app its window is still open
+  if (!(await checkLicence())) return;
   $("outDir").textContent = "File kết quả nằm trong: " + info.out_dir;
   renderPresets();
   fill(info.presets[presetName]);

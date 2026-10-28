@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import os
 import sys
 
 NOTES = {
@@ -83,6 +84,7 @@ def cmd_master(args) -> int:
 
     settings = settings_from_args(args)
     settings.check()  # bad settings fail once, not once per song
+    require_licence()
     files = audio_files(args.songs)
     if not files:
         print("error: no audio files", file=sys.stderr)
@@ -117,11 +119,23 @@ def cmd_analyze(args) -> int:
 
 
 def cmd_app(args) -> int:
-    from bokin_suno.app import run_app
+    from bokin_suno import desktop
 
-    kwargs = {"port": args.port} if args.port else {}
-    run_app(open_browser=args.open, out_dir=args.out, **kwargs)
-    return 0
+    if args.no_browser:
+        os.environ["BOKIN_NO_BROWSER"] = "1"
+    return desktop.serve(out_dir=args.out, idle_exit=False)
+
+
+def require_licence() -> None:
+    """The command line masters only where the app is activated, like the window."""
+    from bokin_suno import licensing
+
+    if licensing.licensed():
+        return
+    state = licensing.view()
+    if not state["licensed"]:
+        raise SystemExit(f"{state['message']}\nMachine code (send it to the seller): {state['machine']}\n"
+                         "Then paste the key in the app's activation screen (bokin-suno app).")
 
 
 def main(argv=None):
@@ -140,10 +154,9 @@ def main(argv=None):
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_analyze)
 
-    p = sub.add_parser("app", help="open the web app")
-    p.add_argument("--port", type=int, help="default 8766")
-    p.add_argument("--open", action="store_true", help="open the browser")
-    p.add_argument("--out", default="outputs", help="where results go (default: outputs)")
+    p = sub.add_parser("app", help="open the app (in a browser window)")
+    p.add_argument("--no-browser", action="store_true", help="only start the server")
+    p.add_argument("--out", help="where results go (default: Music/Bokin Suno Master)")
     p.set_defaults(func=cmd_app)
 
     args = parser.parse_args(argv)

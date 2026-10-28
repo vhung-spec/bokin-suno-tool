@@ -49,3 +49,31 @@ def band_energy(x: np.ndarray, sr: int, lo: float, hi: float) -> float:
 @pytest.fixture(scope="session")
 def song() -> np.ndarray:
     return music()
+
+
+@pytest.fixture(autouse=True)
+def isolated(request, tmp_path, monkeypatch):
+    """Every test: its own data and results folders. The app counts as activated, except in tests
+    marked `unlicensed`, which get an empty key store and a test signing key instead."""
+    from bokin_license import ed25519, keys, store
+    from bokin_suno import licensing
+
+    monkeypatch.setenv("BOKIN_SUNO_DATA", str(tmp_path / "data"))
+    monkeypatch.setenv("BOKIN_SUNO_OUT", str(tmp_path / "results"))
+    monkeypatch.setenv("BOKIN_NO_BROWSER", "1")
+    monkeypatch.setattr(store, "default_folder", lambda: tmp_path / "license")
+    monkeypatch.setattr(licensing, "_last", (0.0, None))
+    if "unlicensed" in request.keywords:
+        secret = b"\x07" * 32
+        monkeypatch.setattr(keys, "PUBLIC_KEY", ed25519.public_key(secret))
+        request.node.licence_secret = secret
+    else:
+        monkeypatch.setattr(licensing, "licensed", lambda fresh=False: True)
+
+
+def test_key(request, products=("suno-master",)) -> str:
+    """A key signed with the test secret of an `unlicensed` test, for this computer."""
+    from bokin_license import keys
+    from bokin_suno import licensing
+
+    return keys.make_key(request.node.licence_secret, licensing.view()["machine"], list(products))

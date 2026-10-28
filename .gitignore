@@ -11,3 +11,12 @@ outputs/
 *.wav
 *.mp3
 *.flac
+
+# Built by packaging/ and the workflow
+packaging/icon.ico
+bokin_suno/version.txt
+build/
+dist/
+dist-next/
+build-next/
+release/

@@ -1,17 +1,21 @@
-"""Bokin Suno Master web app: a local page over master_file().
-
-    bokin-suno app --open        start it and open the browser
+"""Bokin Suno Master's local server: the page and its API over master_file().
 
 It listens on 127.0.0.1 only. Every API call must carry the per-launch token
-that is embedded in the page, so other websites open in the same browser
-cannot use it, and the Host header is checked against DNS rebinding.
+that is embedded in the page (desktop.py also keeps it in the user's data
+folder for the installer), so other websites open in the same browser cannot
+use it, and the Host header is checked against DNS rebinding. Until a Bokin
+License key for this computer is activated (licensing.py), everything but the
+page, its activation screen and the update and quit calls is refused.
 
 Each song becomes a job folder in the output folder: the uploaded song (and
 reference), the results and the report. One job runs at a time; the list
 of past jobs is read back from the folders, so it survives a restart.
+
+desktop.py starts it (the installed app, `bokin-suno app`).
 """
 
 import json
+import os
 import queue
 import re
 import secrets
@@ -26,11 +30,18 @@ from pathlib import Path
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 
-from bokin_suno import __version__
+import bokin_license
+from bokin_suno import licensing, paths
 from bokin_suno.audio_io import AUDIO_EXTENSIONS, FORMATS
 from bokin_suno.master import PRESETS, Settings, master_file, preset
 
-DEFAULT_PORT = 8766  # Bokin Music uses 8765
+DEFAULT_PORT = paths.PORTS[0]
+# Answer without the per-launch token: the page (it carries the token) and the "who is there" ping.
+NO_TOKEN = {"/", "/favicon.ico", "/api/ping"}
+# Answer before the app is activated: the page and its activation screen, the version and
+# presets, updates, quitting. Everything else is refused (the page then shows the activation screen).
+FREE_PATHS = NO_TOKEN | {"/api/info", "/api/license", "/api/update", "/api/update/check",
+                         "/api/update/install", "/api/quit", "/api/shutdown"}
 STATIC = Path(__file__).resolve().parent / "static"
 JOB_ID = r"^[0-9]{8}-[0-9]{6}-[A-Za-z0-9_-]{1,40}$"
 SETTINGS_FILE = "settings.json"
@@ -157,6 +168,10 @@ class Jobs:
     def list(self) -> list[dict]:
         return [j.to_dict() for j in sorted(self.jobs.values(), key=lambda j: j.id, reverse=True)]
 
+    def busy(self) -> bool:
+        """A song is being mastered or waits its turn: quitting now would lose it."""
+        return any(j.state in ("queued", "running") for j in list(self.jobs.values()))
+
     def get(self, job_id: str) -> Job:
         job = self.jobs.get(job_id)
         if job is None:
@@ -171,49 +186,58 @@ class Jobs:
         shutil.rmtree(job.dir, ignore_errors=True)
 
 
-def _open_browser(url: str) -> None:
-    try:
-        is_wsl = "microsoft" in Path("/proc/version").read_text().lower()
-    except OSError:
-        is_wsl = False
-    if is_wsl:  # the Windows browser reaches WSL's localhost
-        subprocess.Popen(["explorer.exe", url], stdout=subprocess.DEVNULL,
-                         stderr=subprocess.DEVNULL)
+class Shared:
+    """What the request handlers and the desktop launcher share."""
+
+    def __init__(self, desktop: bool):
+        self.desktop = desktop
+        self.server = None    # the uvicorn server, to stop it
+        self.updater = None   # updater.AutoUpdate of an installed app
+        self.quit = threading.Event()
+        self.relaunch = False  # quit to install the downloaded update, then start again
+        self.seen = time.time()  # the page's last call: the installed app quits a while after it stops
+
+    def stop(self) -> None:
+        self.quit.set()
+        if self.server is not None:
+            self.server.should_exit = True
+
+    def update_state(self) -> dict:
+        state = dict(self.updater.state) if self.updater else {
+            "current": paths.version(), "available": None, "ready": False, "error": None, "reason": None,
+            "checked": None, "downloading": None}
+        return {**state, "auto": self.updater is not None}
+
+
+def open_in_explorer(path: Path) -> None:
+    if os.name == "nt":
+        os.startfile(path)  # noqa: S606 - our own output folder
     else:
-        import webbrowser
-
-        webbrowser.open(url)
-
-
-def _already_running(port: int) -> bool:
-    """A second click on the shortcut opens the running app instead of failing."""
-    import urllib.request
-
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))  # never via a proxy
-    try:
-        with opener.open(f"http://127.0.0.1:{port}/", timeout=2) as resp:
-            return b"Bokin Suno Master" in resp.read(2000)
-    except OSError:
-        return False
+        subprocess.Popen(["xdg-open", str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def create_app(token: str, out_dir: Path, port: int = DEFAULT_PORT,
-               extra_hosts: tuple[str, ...] = ()) -> FastAPI:
+               extra_hosts: tuple[str, ...] = (), desktop: bool = False) -> FastAPI:
     app = FastAPI(title="Bokin Suno Master", docs_url=None, redoc_url=None, openapi_url=None)
     jobs = Jobs(Path(out_dir).resolve())
-    state = {"server": None}
+    shared = Shared(desktop)
     allowed_hosts = {f"127.0.0.1:{port}", f"localhost:{port}", *extra_hosts}
 
     @app.middleware("http")
     async def guard(request: Request, call_next):
+        path = request.url.path
         if request.headers.get("host", "") not in allowed_hosts:
             return JSONResponse({"detail": "bad host"}, status_code=403)
-        if request.url.path == "/favicon.ico":
+        if path == "/favicon.ico":
             return Response(status_code=204)
-        if request.url.path != "/":
+        if path not in NO_TOKEN:
             supplied = request.headers.get("x-bokin-token") or request.query_params.get("t")
             if not supplied or not secrets.compare_digest(supplied, token):
                 return JSONResponse({"detail": "missing or wrong token"}, status_code=403)
+            shared.seen = time.time()
+            if path not in FREE_PATHS and not licensing.licensed():
+                return JSONResponse({"detail": "Bokin Suno Master chưa được kích hoạt trên máy này.",
+                                     "license": True}, status_code=403)
         return await call_next(request)
 
     @app.get("/", response_class=HTMLResponse)
@@ -221,11 +245,71 @@ def create_app(token: str, out_dir: Path, port: int = DEFAULT_PORT,
         html = (STATIC / "index.html").read_text(encoding="utf-8")
         return html.replace("__BOKIN_TOKEN__", token)
 
+    @app.get("/api/ping")
+    def ping():
+        return {"app": paths.APP_ID, "version": paths.version(), "owner": paths.owner()}
+
     @app.get("/api/info")
     def info():
-        return {"version": __version__, "out_dir": str(jobs.dir), "formats": list(FORMATS),
-                "extensions": sorted(AUDIO_EXTENSIONS),
+        return {"version": paths.version(), "out_dir": str(jobs.dir), "formats": list(FORMATS),
+                "extensions": sorted(AUDIO_EXTENSIONS), "desktop": desktop,
                 "presets": {name: preset(name).to_dict() for name in PRESETS}}
+
+    @app.get("/api/license")
+    def license_view():
+        return licensing.view()
+
+    @app.post("/api/license")
+    def license_activate(body: dict):
+        try:
+            return licensing.activate(body.get("key"))
+        except bokin_license.LicenseError as err:
+            raise HTTPException(400, str(err)) from err
+
+    @app.get("/api/update")
+    def update_state():
+        return shared.update_state()
+
+    @app.post("/api/update/check")
+    def update_check():
+        started = bool(shared.updater and shared.updater.check_soon())
+        return {**shared.update_state(), "started": started}
+
+    @app.post("/api/update/install")
+    def update_install():
+        up = shared.updater
+        if not up or not up.state.get("ready") or not up.installer or not os.path.exists(up.installer):
+            raise HTTPException(400, "Chưa có bản cập nhật sẵn sàng.")
+        if jobs.busy():
+            raise HTTPException(400, "App đang master bài hát. Cập nhật sau khi xong.")
+        shared.relaunch = True
+        shared.stop()
+        return {"ok": True}
+
+    @app.post("/api/quit")
+    def quit_app():
+        """The installer (desktop --close) asks before replacing the files."""
+        if jobs.busy():
+            return {"busy": True}
+        shared.relaunch = False
+        shared.stop()
+        return {"ok": True}
+
+    @app.post("/api/shutdown")
+    def shutdown():
+        """The page's "Tắt app" button: quits even while a song is being mastered (it asked first)."""
+        shared.relaunch = False
+        shared.stop()
+        return {"stopping": True}
+
+    @app.post("/api/open")
+    def open_folder(body: dict):
+        if not desktop:
+            raise HTTPException(400, "Chỉ mở được thư mục ở app cài trên máy.")
+        job_id = body.get("job")
+        target = jobs.get(job_id).dir if job_id else jobs.dir
+        open_in_explorer(target)
+        return {"ok": True}
 
     @app.post("/api/jobs")
     def add_job(song: UploadFile = File(...), reference: UploadFile | None = File(None),
@@ -261,33 +345,6 @@ def create_app(token: str, out_dir: Path, port: int = DEFAULT_PORT,
         return FileResponse(job.dir / name, filename=name if download else None,
                             content_disposition_type="attachment" if download else "inline")
 
-    @app.post("/api/shutdown")
-    def shutdown():
-        if state["server"] is not None:
-            state["server"].should_exit = True
-        return {"stopping": True}
-
-    app.state.bokin = state
+    app.state.bokin = shared
     app.state.jobs = jobs
     return app
-
-
-def run_app(port: int = DEFAULT_PORT, open_browser: bool = False, out_dir: str | Path = "outputs") -> None:
-    import uvicorn
-
-    url = f"http://localhost:{port}/"
-    if _already_running(port):
-        print(f"Bokin Suno Master is already running on {url}")
-        if open_browser:
-            _open_browser(url)
-        return
-    token = secrets.token_urlsafe(24)
-    app = create_app(token, Path(out_dir), port=port)
-    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
-    server = uvicorn.Server(config)
-    app.state.bokin["server"] = server
-    print(f"Bokin Suno Master {__version__} on {url}  (Ctrl+C or the 'Tắt app' button to quit)")
-    print(f"Results go to {Path(out_dir).resolve()}")
-    if open_browser:
-        threading.Timer(1.5, _open_browser, args=(url,)).start()
-    server.run()
