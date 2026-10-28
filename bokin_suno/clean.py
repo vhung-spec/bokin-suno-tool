@@ -150,7 +150,7 @@ def _overtone(k: int, excess: np.ndarray, frames_db: np.ndarray, grid: _Grid, ha
             break
         lo = max(0, j - 2)  # +-2 bins: piano overtones sit a little sharp
         top = lo + int(np.argmax(excess[lo:j + 3]))
-        if excess[top] < 6 or excess[top] < max(excess[top - 1], excess[min(top + 1, len(excess) - 1)]):
+        if excess[top] < 6 or excess[top] < max(excess[max(top - 1, 0)], excess[min(top + 1, len(excess) - 1)]):
             continue  # no peak there (the slope of a neighbouring peak is not one)
         around = np.median(frames_db[max(0, top - half):top + half + 1], axis=0)
         if np.mean(frames_db[top] - around > 6) >= 0.5:
