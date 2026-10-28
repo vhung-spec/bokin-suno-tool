@@ -13,7 +13,8 @@ PRODUCTS = {
     "loop": (3, "Bokin Loop"),
     "motion-studio": (4, "Bokin Motion Studio"),
     "upscaler": (5, "Bokin Upscaler"),
-    "suno-master": (6, "Bokin Suno Master"),
+    "playlist-planner": (6, "Bokin Playlist Planner"),  # added 2026-10-28
+    "suno-master": (7, "Bokin Suno Master"),  # added 2026-10-28
 }
 
 
