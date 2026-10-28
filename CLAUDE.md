@@ -44,3 +44,7 @@
 - Suno giả lập phải đi cùng `SEL`: sửa selector thì sửa cả Suno giả lập và bài thử.
 - Chưa thử trên suno.com thật: máy chủ phiên làm việc không vào được suno.com; sửa `SEL` theo ảnh và file `.html` chủ
   gửi.
+- Bài tải về sẽ vào Kho nhạc của công ty (chủ chốt 28/10/2026): Bokin Connect, app nội bộ ở repo riêng tư, đọc thư mục
+  tải và `danh-sach.csv`. Repo này công khai: không đặt mã nối máy chủ công ty ở đây; đổi cột hay tên file của
+  `danh-sach.csv` thì ghi rõ trong commit. Suno Master (master bài Suno) chỉ dùng nội bộ: hỏi chủ trước khi đặt mã của
+  nó vào repo công khai này.
