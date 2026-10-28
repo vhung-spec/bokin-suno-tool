@@ -134,6 +134,17 @@ PRESETS = {
              "mono_bass_hz": 100.0, "release_ms": 150.0,
              "clean": {"shimmer": 0.35, "dehiss": 0.2, "deess": 0.0, "dewhine": 0.5},
              "eq": {"bass": 1.0, "body": 1.5, "presence": 1.5, "air": 2.0}},
+    # Dark piano (sad, moody, cinematic piano, often with pads and long
+    # reverb): deep, soft and quiet-loud. -16 LUFS keeps the piano's dynamics
+    # with little limiting (its peaks stand ~17 dB over its loudness); a slow
+    # limiter release does not pump on held chords. Weight for the low
+    # octaves, the boxy 300 Hz and the clang of Suno's hammers taken down, a
+    # darker top. The quiet passages and reverb tails lay Suno's hiss bare,
+    # hence the hiss removal; the low cut at 20 Hz keeps the lowest A (27.5 Hz).
+    "dark_piano": {"target_lufs": -16.0, "ceiling_db": -1.0, "lowcut_hz": 20.0, "glue": 0.1, "warmth": 0.3,
+                   "density": 0.2, "mono_bass_hz": 80.0, "release_ms": 300.0,
+                   "clean": {"shimmer": 0.45, "dehiss": 0.35, "deess": 0.0, "dewhine": 0.5},
+                   "eq": {"bass": 1.5, "mud": -1.5, "harsh": -2.0, "air": -1.0}},
 }
 
 

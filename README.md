@@ -12,13 +12,13 @@ Bài Suno ──► lọc ù thấp ──► khử lỗi AI ──► khớp b�
 
 | Bước | Làm gì |
 |---|---|
-| Lọc ù thấp | Cắt dưới 25 Hz (tiếng ù, DC), giữ nguyên hình dạng tiếng trống kick. |
-| Khử lỗi AI | **Shimmer**: tiếng rè lấp lánh kiểu kim loại ở dải cao, lỗi đặc trưng của Suno. **Tiếng rít đều**: một tần số cao kêu suốt bài. **Tiếng xì nền** ("xào xào", tắt sẵn, trừ kiểu Bossa nova và Jazz) và **âm "s" chói** (tắt sẵn). |
+| Lọc ù thấp | Cắt dưới 25 Hz (kiểu Dark piano: 20 Hz) (tiếng ù, DC), giữ nguyên hình dạng tiếng trống kick. |
+| Khử lỗi AI | **Shimmer**: tiếng rè lấp lánh kiểu kim loại ở dải cao, lỗi đặc trưng của Suno. **Tiếng rít đều**: một tần số cao kêu suốt bài. **Tiếng xì nền** ("xào xào", tắt sẵn, trừ kiểu Bossa nova, Jazz và Dark piano) và **âm "s" chói** (tắt sẵn). |
 | Khớp bài mẫu | Nếu bạn đưa một bài đã phát hành làm mẫu, màu âm và độ rộng stereo của bài bạn được chỉnh dần về phía bài mẫu (kiểu Matchering). |
 | EQ | Sáu nút hay dùng cho bài Suno: Bass (100 Hz), Thân âm (180 Hz), Bớt đục (300 Hz), Độ rõ (2,5 kHz), Bớt gắt (3,5 kHz), Độ sáng (10 kHz). |
 | Stereo | Bass dưới 120 Hz chuyển về mono để tiếng trầm chắc, nghe ổn trên điện thoại và loa nhỏ. Có thể nới rộng hoặc thu hẹp stereo. |
-| Độ ấm | Bão hoà nhẹ kiểu đèn điện tử ở dải trầm-trung (100 Hz–1,2 kHz): thêm hoạ âm cho đàn guitar, piano, contrebass, giọng. Tắt sẵn, trừ kiểu Bossa nova và Jazz. |
-| Độ dày | Nén song song: một bản nén mạnh được trộn dưới bài gốc, nên chi tiết nhỏ (tiếng chổi trống, hơi thở, đuôi vang) được nâng lên mà tiếng gảy, tiếng trống vẫn giữ lực. Tắt sẵn, trừ kiểu Bossa nova và Jazz. |
+| Độ ấm | Bão hoà nhẹ kiểu đèn điện tử ở dải trầm-trung (100 Hz–1,2 kHz): thêm hoạ âm cho đàn guitar, piano, contrebass, giọng. Tắt sẵn, trừ kiểu Bossa nova, Jazz và Dark piano. |
+| Độ dày | Nén song song: một bản nén mạnh được trộn dưới bài gốc, nên chi tiết nhỏ (tiếng chổi trống, hơi thở, đuôi vang) được nâng lên mà tiếng gảy, tiếng trống vẫn giữ lực. Tắt sẵn, trừ kiểu Bossa nova, Jazz và Dark piano. |
 | Nén "dính" | Nén nhẹ toàn bài cho các nhạc cụ quyện vào nhau. Trống vẫn giữ được lực vì nén phản ứng chậm. |
 | Độ to + limiter | Đưa bài về độ to mục tiêu (LUFS) và giữ **đỉnh thật** (true peak, gồm cả đỉnh nằm giữa các mẫu) dưới trần, thường là -1 dBTP. |
 | Xuất file | WAV 24-bit, WAV 16-bit 44,1 kHz (có dither), FLAC, hoặc MP3 320 kbps. |
@@ -88,6 +88,7 @@ Trên macOS, thay dòng `install.sh` bằng `python3 -m venv .venv && .venv/bin/
    | Chỉ làm sạch | giữ nguyên | Chỉ khử lỗi AI, không đổi độ to. |
    | Bossa nova | -14 LUFS | Ấm, gần, mượt: guitar nylon, giọng hát nhẹ (xem bên dưới). |
    | Jazz | -14 LUFS | Swing, piano trio, big band, jazz Giáng sinh: rõ, có lực, giữ độ động (xem bên dưới). |
+   | Dark piano | -16 LUFS | Piano buồn, u tối, cinematic: trầm sâu, mềm, giữ độ động, đoạn lặng sạch xì (xem bên dưới). |
 
    Spotify, YouTube và Apple Music đều tự vặn nhỏ bài nào to hơn khoảng -14 LUFS. Master to
    hơn mức đó trên các nền tảng này không làm bài nghe to hơn, chỉ làm mất độ động.
@@ -109,8 +110,10 @@ File kết quả nằm trong thư mục **Music\Bokin Suno Master**, mỗi bài 
   tần số bên cạnh. Những điểm này bị kéo xuống. Tiếng trống (rộng về tần số) và nốt nhạc ngân
   dài (dài về thời gian) không bị đụng tới.
 - **Tiếng rít đều**, mặc định 50%: chỉ cắt khi một tần số trên 2,5 kHz nổi lên suốt gần hết
-  bài với mức ổn định. Nốt nhạc đến rồi đi nên không bị coi là tiếng rít.
-- **Tiếng xì nền** (tiếng "xào xào"), mặc định tắt, kiểu Bossa nova bật 35%, Jazz 20%: học mức tiếng xì từ những
+  bài với mức ổn định. Nốt nhạc đến rồi đi nên không bị coi là tiếng rít. Một nốt được gõ lặp lại
+  suốt bài (ostinato piano, nốt pedal) cũng không: bồi âm của nó luôn có nốt gốc nằm ở tần số
+  1/2, 1/3... bên dưới, còn tiếng rít thì đứng một mình.
+- **Tiếng xì nền** (tiếng "xào xào"), mặc định tắt, kiểu Bossa nova và Dark piano bật 35%, Jazz 20%: học mức tiếng xì từ những
   đoạn yên nhất, rồi trừ đi ở dải cao. Còn nghe xào xào thì tăng lên 50–60%. Tiếng chổi trống,
   shaker cũng là tiếng "xì" nên sẽ nhỏ đi một chút.
 - **Âm "s" chói**, mặc định tắt: giảm dải 5–10 kHz ở những lúc dải này vọt lên. Chỉ bật khi
@@ -148,7 +151,7 @@ thể đẩy đỉnh lên một chút.
 .venv/bin/bokin-suno master --help                                            # mọi tuỳ chọn
 ```
 
-Preset trong dòng lệnh: `streaming`, `loud`, `gentle`, `clean_only`, `bossa`, `jazz`.
+Preset trong dòng lệnh: `streaming`, `loud`, `gentle`, `clean_only`, `bossa`, `jazz`, `dark_piano`.
 
 ## Kiểu Bossa nova và kiểu Jazz
 
@@ -194,6 +197,54 @@ một câu saxophone. Cả hai đều có chút rè và xì kiểu Suno, và có
 
 Các con số trên đo trên bài giả lập, chưa phải bài Suno thật. Hãy nghe so sánh cùng độ to. Nếu thấy
 quá dày hoặc quá sáng, giảm *Độ dày*, *Độ rõ* hoặc *Độ sáng* trong mục Tuỳ chỉnh.
+
+## Kiểu Dark piano
+
+Cho nhạc piano buồn, u tối, cinematic (piano solo, hoặc piano với pad, dây, vang dài): **trầm sâu,
+mềm, giữ độ động**.
+- **-16 LUFS** thay vì -14: đỉnh tiếng búa đàn piano cao hơn độ to khoảng 17 dB. Ép lên -14 LUFS thì
+  limiter phải nén mạnh, tiếng gõ phím bị bẹt. Ở -16 LUFS, limiter chỉ chạm nhẹ, nhả chậm (300 ms) nên
+  hợp âm ngân dài không bị "phập phồng".
+- Quãng tám trầm có trọng lượng (+1,5 dB ở 100 Hz). Tiếng hộp, đục ở 300 Hz và tiếng búa leng keng
+  của piano Suno được dịu xuống. Dải cao tối hơn một chút.
+- Đoạn lặng và đuôi vang là chỗ tiếng xì của Suno lộ rõ nhất, nên kiểu này bật khử xì 35%.
+- Lọc ù thấp ở 20 Hz (không phải 25 Hz) để giữ nốt La thấp nhất của piano (27,5 Hz). Bass mono dưới
+  80 Hz, để tiếng piano trầm vẫn còn độ rộng.
+
+| Bước | Dark piano | Nghe trực tuyến |
+|---|---|---|
+| Độ to | -16 LUFS | -14 LUFS |
+| Bass 100 Hz | +1,5 dB (quãng tám trầm) | 0 |
+| Bớt đục 300 Hz | −1,5 dB | 0 |
+| Bớt gắt 3,5 kHz | −2 dB (tiếng búa leng keng) | 0 |
+| Độ sáng 10 kHz | −1 dB (tối, mềm) | 0 |
+| Độ ấm | 30% | tắt |
+| Độ dày | 20% (đuôi vang, nốt nhẹ) | tắt |
+| Nén "dính" | 10% | 30% |
+| Shimmer | 45% | 50% |
+| Tiếng xì nền | 35% | tắt |
+| Bass mono dưới | 80 Hz | 120 Hz |
+| Limiter nhả | 300 ms | 80 ms |
+
+Đo trên một bài dark piano tạo bằng code dài 40 giây, cung Rê thứ: quãng tám trầm, giai điệu thưa,
+một nốt La cao gõ lặp lại suốt bài, dây nền ở đoạn giữa, vang 2,8 giây. Bài có đoạn mở đầu nhẹ, đoạn
+giữa mạnh, một đoạn lặng, và có tiếng xì, rè, tiếng hộp, tiếng gắt kiểu Suno:
+
+| | Nghe trực tuyến | Nhẹ nhàng | Dark piano |
+|---|---|---|---|
+| Độ to | -14 LUFS | -16 LUFS | -16 LUFS |
+| Limiter nén tối đa | 2,9 dB | 0,7 dB | 1,2 dB |
+| Độ động (LRA) | 10,5 LU | 11,3 LU | 10,1 LU |
+| Đoạn mạnh to hơn đoạn nhẹ | 7,8 dB | 8,4 dB | 7,4 dB |
+| Tiếng xì ở đoạn lặng (so với độ to bài) | −33 dB | −34 dB | −37 dB |
+| Dải 40–120 Hz | 0 | −0,2 dB | +1,5 dB |
+| Dải 250–350 Hz | 0 | −0,1 dB | −1,2 dB |
+| Dải 2,5–5 kHz | 0 | −0,2 dB | −1,5 dB |
+| Dải trên 10 kHz | 0 | −0,3 dB | −2,1 dB |
+
+Phần bị khử ở đoạn mạnh thấp hơn tiếng đàn 43 dB, tức tiếng piano gần như không bị đụng tới. Nốt La
+lặp lại không bị coi là tiếng rít. Nếu muốn sáng hơn, tăng *Độ sáng* về 0. Nếu muốn to hơn cho
+YouTube, đặt độ to -14 LUFS trong mục Tuỳ chỉnh: đổi lại, tiếng gõ phím sẽ bị nén nhiều hơn.
 
 ## Giới hạn
 

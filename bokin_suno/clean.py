@@ -130,12 +130,32 @@ def _find_whines(P: np.ndarray, grid: _Grid, amount: float) -> tuple[np.ndarray,
         steady = np.std(frames_db[k]) < 4  # a whine holds its level; notes come and go
         if not (present >= 0.8 or (present >= 0.6 and steady)):
             continue  # music, not a whine
+        if _overtone(k, excess, frames_db, grid, half):
+            continue  # a held or repeated note's overtone, not a whine
         depth = min(24.0, (float(excess[k]) - 3) * amount)
         for j, share in ((-2, 0.5), (-1, 1.0), (0, 1.0), (1, 1.0), (2, 0.5)):
             if 0 <= k + j < len(cut):  # the Hann main lobe spreads a tone over +-2 bins
                 cut[k + j] = min(cut[k + j], -depth * share)
         found.append(round(float(grid.freqs[k]), 1))
     return cut, found
+
+
+def _overtone(k: int, excess: np.ndarray, frames_db: np.ndarray, grid: _Grid, half: int) -> bool:
+    """True when f/2 ... f/8 also holds a lasting peak: f is then an overtone of
+    a note held or repeated through the song (a piano ostinato, a pedal note),
+    while a whine stands alone."""
+    for d in range(2, 9):
+        j = int(round(grid.freqs[k] / d / grid.bin_hz))
+        if j < 2:
+            break
+        lo = max(0, j - 2)  # +-2 bins: piano overtones sit a little sharp
+        top = lo + int(np.argmax(excess[lo:j + 3]))
+        if excess[top] < 6 or excess[top] < max(excess[top - 1], excess[min(top + 1, len(excess) - 1)]):
+            continue  # no peak there (the slope of a neighbouring peak is not one)
+        around = np.median(frames_db[max(0, top - half):top + half + 1], axis=0)
+        if np.mean(frames_db[top] - around > 6) >= 0.5:
+            return True
+    return False
 
 
 def _profile(x: np.ndarray, grid: _Grid, s: CleanSettings) -> dict | None:

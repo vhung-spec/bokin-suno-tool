@@ -43,7 +43,7 @@ def test_page_embeds_token_and_api_needs_it(client):
     assert anonymous.get("/api/info", headers={"X-Bokin-Token": "wrong"}).status_code == 403
     assert client.get("/api/info", headers={"Host": "evil.example"}).status_code == 403
     info = client.get("/api/info").json()
-    assert set(info["presets"]) == {"streaming", "loud", "gentle", "clean_only", "bossa", "jazz"}
+    assert set(info["presets"]) == {"streaming", "loud", "gentle", "clean_only", "bossa", "jazz", "dark_piano"}
 
 
 def test_master_a_song_end_to_end(client, song, tmp_path):

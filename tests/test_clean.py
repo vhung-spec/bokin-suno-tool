@@ -35,6 +35,20 @@ def test_removes_a_steady_whine_and_spares_the_music(song):
     assert clean_stats["whines_hz"] == []  # sustained chord notes are not whines
 
 
+def test_a_repeated_high_note_is_not_a_whine(song):
+    # a piano ostinato: A6 struck every half second through the whole song,
+    # its overtones (3.5, 5.3, 7 kHz) are there in every frame
+    t = np.arange(int(0.5 * SR)) / SR
+    note = sum(0.02 / k * np.exp(-t * (3 + k)) * np.sin(2 * np.pi * 1760 * k * np.sqrt(1 + 0.0002 * k * k) * t)
+               for k in range(1, 5))
+    ostinato = np.repeat(np.tile(note, len(song) // len(note) + 1)[:len(song), None], 2, axis=1)
+    y, stats = clean(song + ostinato, SR, CleanSettings(shimmer=0, dewhine=1))
+    assert stats["whines_hz"] == []
+    np.testing.assert_allclose(y, song + ostinato, atol=1e-6)
+    _, stats = clean(song + ostinato + whine(), SR, CleanSettings(shimmer=0, dewhine=0.5))
+    assert len(stats["whines_hz"]) == 1 and abs(stats["whines_hz"][0] - 7350) < 30  # a lone whine still goes
+
+
 def test_shimmer_pulls_down_short_narrow_grains(song):
     rng = np.random.default_rng(3)
     grains = np.zeros_like(song)
