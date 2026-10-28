@@ -26,7 +26,7 @@ def test_one_copy_runs_and_the_installer_can_close_it():
     thread.start()
     info = wait_for(desktop.running)
     assert info["port"] in paths.PORTS
-    saved = json.loads(paths.running_file().read_text())
+    saved = json.loads(paths.running_file().read_text(encoding="utf-8"))
     assert saved["token"] == info["token"] and saved["port"] == info["port"]
     page = urllib.request.urlopen(f"http://127.0.0.1:{info['port']}/", timeout=5).read().decode()
     assert info["token"] in page

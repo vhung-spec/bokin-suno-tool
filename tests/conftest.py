@@ -71,7 +71,7 @@ def isolated(request, tmp_path, monkeypatch):
         monkeypatch.setattr(licensing, "licensed", lambda fresh=False: True)
 
 
-def test_key(request, products=("suno-master",)) -> str:
+def signed_key(request, products=("suno-master",)) -> str:
     """A key signed with the test secret of an `unlicensed` test, for this computer."""
     from bokin_license import keys
     from bokin_suno import licensing

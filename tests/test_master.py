@@ -62,7 +62,7 @@ def test_master_file_writes_results(tmp_path, wav):
     result = master_file(wav, tmp_path / "out", preset("streaming"))
     assert result.output.name == "Bài hát_master.wav"
     assert result.removed.name == "Bài hát_removed.wav"
-    report = json.loads((tmp_path / "out" / "Bài hát_report.json").read_text())
+    report = json.loads((tmp_path / "out" / "Bài hát_report.json").read_text(encoding="utf-8"))
     assert report["output_file"] == result.output.name
     assert report["stages"]["clean"]["whines_hz"]
     x, sr = audio_io.load(result.output)
