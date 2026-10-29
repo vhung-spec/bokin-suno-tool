@@ -27,7 +27,8 @@ def test_everything_off_is_transparent(song):
 
 
 @pytest.mark.parametrize("name,target", [("streaming", -14.0), ("loud", -10.0), ("gentle", -16.0),
-                                         ("bossa", -14.0), ("jazz", -14.0), ("dark_piano", -16.0)])
+                                         ("bossa", -14.0), ("jazz", -14.0), ("dark_piano", -16.0),
+                                         ("classical_christmas", -16.0)])
 def test_presets_hit_loudness_and_ceiling(song, name, target):
     y, removed, report = process(song, SR, preset(name))
     assert lufs(y, SR) == pytest.approx(target, abs=0.15)
@@ -94,6 +95,60 @@ def test_dark_piano_is_deeper_softer_and_cleaner_in_the_quiet():
     assert limiting["dark_piano"] < limiting["streaming"] - 1  # the hammers keep their attack
 
 
+SIBILANTS, BELLS = (1.0, 3.0, 5.0, 7.0), (2.0, 4.5, 6.5)
+
+
+def _carol(seconds: float = 10.0) -> np.ndarray:
+    """A string chord, soft until 4 s and loud until 8.5 s, then a pause (only
+    hiss); a choir's "s" at SIBILANTS, glockenspiel hits at BELLS."""
+    rng = np.random.default_rng(6)
+    n = int(seconds * SR)
+    t = np.arange(n) / SR
+    chord = sum(0.03 / k * np.sin(2 * np.pi * f * k * t + rng.uniform(0, 6))
+                for f in (196.0, 246.9, 293.7) for k in range(1, 25) if f * k < 7000)
+    level = np.interp(t, [0, 3.95, 4.05, 8.45, 8.55, seconds], [0.25, 0.25, 1, 1, 0, 0])
+    x = np.repeat((chord * level)[:, None], 2, axis=1)
+    m = int(0.12 * SR)
+    s = signal.sosfilt(signal.butter(4, [4500, 11000], "bandpass", fs=SR, output="sos"), rng.standard_normal(m))
+    for at in SIBILANTS:
+        x[int(at * SR):int(at * SR) + m] += (0.06 * np.interp(at, t, level) * s * np.hanning(m))[:, None]
+    tt = np.arange(int(1.5 * SR)) / SR
+    bell = sum(a * np.exp(-tt * d) * np.sin(2 * np.pi * 1568 * r * tt)
+               for r, a, d in ((1, 0.06, 1.2), (2.76, 0.03, 2.5), (5.4, 0.015, 5)))
+    for at in BELLS:
+        x[int(at * SR):int(at * SR) + len(bell)] += bell[:, None]
+    x += signal.sosfilt(signal.butter(2, 2500, "highpass", fs=SR, output="sos"),
+                        rng.standard_normal((n, 2)), axis=0) * 2e-4
+    return x
+
+
+def test_classical_christmas_keeps_dynamics_and_bells_and_softens_the_choirs_s():
+    x = _carol()
+    out = {name: process(x, SR, preset(name))[0] for name in ("streaming", "jazz", "classical_christmas")}
+
+    def level(y, lo, hi, a, b):
+        part = y[int(a * SR):int(b * SR)]
+        return 10 * np.log10(band_energy(part, SR, lo, hi) / len(part) + 1e-30)
+
+    def jump(y, times, lo, hi, length):  # how far a band rises at the events over just before
+        return np.mean([level(y, lo, hi, at, at + length) - level(y, lo, hi, at - 0.3, at - 0.05) for at in times])
+
+    def change(f, other="streaming"):
+        return f(out["classical_christmas"]) - f(out[other])
+
+    assert change(lambda y: jump(y, SIBILANTS, 5000, 10000, 0.12)) < -0.5  # the choir's "s" softer
+    assert change(lambda y: jump(y, BELLS, 4000, 9000, 0.15)) > -0.3       # bells as bright as before
+    assert change(lambda y: np.mean([level(y, 8200, 8750, at, at + 0.3) for at in BELLS])
+                  - level(y, 150, 1200, 4, 8)) > 0                          # their top partial too
+    assert change(lambda y: level(y, 4000, 16000, 8.7, 9.9) - lufs(y, SR)) < -2  # less hiss in the pause
+
+    def soft_to_loud(y):  # in the strings' band only, which neither EQ nor bells change
+        return level(y, 150, 1200, 5, 8) - level(y, 150, 1200, 1, 3.8)
+
+    assert change(soft_to_loud) > -0.5           # pianissimo stays as far below the tutti as plainly mastered
+    assert change(soft_to_loud, "jazz") > 0.7    # and further than a preset that lifts the quiet parts
+
+
 def test_reference_loudness(song):
     quiet_ref = music(6.0, seed=5) * 0.2
     y, _, report = process(song, SR, preset("streaming", match_loudness=True), (quiet_ref, SR))
@@ -141,4 +196,5 @@ def test_settings_round_trip_and_validation():
         Settings(format="mp3").check(sr=96000)
     with pytest.raises(ValueError):
         preset("nope")
-    assert set(PRESETS) == {"streaming", "loud", "gentle", "clean_only", "bossa", "jazz", "dark_piano"}
+    assert set(PRESETS) == {"streaming", "loud", "gentle", "clean_only", "bossa", "jazz", "dark_piano",
+                            "classical_christmas"}

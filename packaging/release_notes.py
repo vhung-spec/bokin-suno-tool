@@ -28,7 +28,8 @@ def write(installer, version, folder):
     os.makedirs(folder, exist_ok=True)
     with open(os.path.join(folder, "notes.md"), "w", encoding="utf-8") as f:
         f.write(f"""Bokin Suno Master {version}: làm sạch và master bài hát tạo bằng Suno AI (khử rè, xì, rít;
-EQ; độ dày, độ ấm; độ to chuẩn -14 LUFS), với các kiểu Nghe trực tuyến, Bossa nova, Jazz, Dark piano.
+EQ; độ dày, độ ấm; độ to chuẩn LUFS), với các kiểu Nghe trực tuyến, Bossa nova, Jazz, Dark piano,
+Giáng sinh cổ điển.
 
 Tải **{name}** bên dưới, bấm đúp để cài (không cần quyền quản trị). Mở app lần đầu: gửi Mã máy
 cho người bán, dán key nhận được rồi bấm Kích hoạt. App đã cài tự cập nhật.

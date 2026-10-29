@@ -12,12 +12,12 @@ Bài Suno ──► lọc ù thấp ──► khử lỗi AI ──► khớp b�
 
 | Bước | Làm gì |
 |---|---|
-| Lọc ù thấp | Cắt dưới 25 Hz (kiểu Dark piano: 20 Hz) (tiếng ù, DC), giữ nguyên hình dạng tiếng trống kick. |
-| Khử lỗi AI | **Shimmer**: tiếng rè lấp lánh kiểu kim loại ở dải cao, lỗi đặc trưng của Suno. **Tiếng rít đều**: một tần số cao kêu suốt bài. **Tiếng xì nền** ("xào xào", tắt sẵn, trừ kiểu Bossa nova, Jazz và Dark piano) và **âm "s" chói** (tắt sẵn). |
+| Lọc ù thấp | Cắt dưới 25 Hz (kiểu Dark piano và Giáng sinh cổ điển: 20 Hz) (tiếng ù, DC), giữ nguyên hình dạng tiếng trống kick. |
+| Khử lỗi AI | **Shimmer**: tiếng rè lấp lánh kiểu kim loại ở dải cao, lỗi đặc trưng của Suno. **Tiếng rít đều**: một tần số cao kêu suốt bài. **Tiếng xì nền** ("xào xào", tắt sẵn, trừ kiểu Bossa nova, Jazz, Dark piano và Giáng sinh cổ điển) và **âm "s" chói** (tắt sẵn, trừ kiểu Giáng sinh cổ điển). |
 | Khớp bài mẫu | Nếu bạn đưa một bài đã phát hành làm mẫu, màu âm và độ rộng stereo của bài bạn được chỉnh dần về phía bài mẫu (kiểu Matchering). |
 | EQ | Sáu nút hay dùng cho bài Suno: Bass (100 Hz), Thân âm (180 Hz), Bớt đục (300 Hz), Độ rõ (2,5 kHz), Bớt gắt (3,5 kHz), Độ sáng (10 kHz). |
 | Stereo | Bass dưới 120 Hz chuyển về mono để tiếng trầm chắc, nghe ổn trên điện thoại và loa nhỏ. Có thể nới rộng hoặc thu hẹp stereo. |
-| Độ ấm | Bão hoà nhẹ kiểu đèn điện tử ở dải trầm-trung (100 Hz–1,2 kHz): thêm hoạ âm cho đàn guitar, piano, contrebass, giọng. Tắt sẵn, trừ kiểu Bossa nova, Jazz và Dark piano. |
+| Độ ấm | Bão hoà nhẹ kiểu đèn điện tử ở dải trầm-trung (100 Hz–1,2 kHz): thêm hoạ âm cho đàn guitar, piano, contrebass, giọng. Tắt sẵn, trừ kiểu Bossa nova, Jazz, Dark piano và Giáng sinh cổ điển. |
 | Độ dày | Nén song song: một bản nén mạnh được trộn dưới bài gốc, nên chi tiết nhỏ (tiếng chổi trống, hơi thở, đuôi vang) được nâng lên mà tiếng gảy, tiếng trống vẫn giữ lực. Tắt sẵn, trừ kiểu Bossa nova, Jazz và Dark piano. |
 | Nén "dính" | Nén nhẹ toàn bài cho các nhạc cụ quyện vào nhau. Trống vẫn giữ được lực vì nén phản ứng chậm. |
 | Độ to + limiter | Đưa bài về độ to mục tiêu (LUFS) và giữ **đỉnh thật** (true peak, gồm cả đỉnh nằm giữa các mẫu) dưới trần, thường là -1 dBTP. |
@@ -89,6 +89,7 @@ Trên macOS, thay dòng `install.sh` bằng `python3 -m venv .venv && .venv/bin/
    | Bossa nova | -14 LUFS | Ấm, gần, mượt: guitar nylon, giọng hát nhẹ (xem bên dưới). |
    | Jazz | -14 LUFS | Swing, piano trio, big band, jazz Giáng sinh: rõ, có lực, giữ độ động (xem bên dưới). |
    | Dark piano | -16 LUFS | Piano buồn, u tối, cinematic: trầm sâu, mềm, giữ độ động, đoạn lặng sạch xì (xem bên dưới). |
+   | Giáng sinh cổ điển | -16 LUFS | Dàn nhạc, hợp xướng, chuông (Silent Night, O Holy Night, Kẹp hạt dẻ): rộng, trong, giữ độ động lớn (xem bên dưới). |
 
    Spotify, YouTube và Apple Music đều tự vặn nhỏ bài nào to hơn khoảng -14 LUFS. Master to
    hơn mức đó trên các nền tảng này không làm bài nghe to hơn, chỉ làm mất độ động.
@@ -113,11 +114,11 @@ File kết quả nằm trong thư mục **Music\Bokin Suno Master**, mỗi bài 
   bài với mức ổn định. Nốt nhạc đến rồi đi nên không bị coi là tiếng rít. Một nốt được gõ lặp lại
   suốt bài (ostinato piano, nốt pedal) cũng không: bồi âm của nó luôn có nốt gốc nằm ở tần số
   1/2, 1/3... bên dưới, còn tiếng rít thì đứng một mình.
-- **Tiếng xì nền** (tiếng "xào xào"), mặc định tắt, kiểu Bossa nova và Dark piano bật 35%, Jazz 20%: học mức tiếng xì từ những
+- **Tiếng xì nền** (tiếng "xào xào"), mặc định tắt, kiểu Bossa nova và Dark piano bật 35%, Giáng sinh cổ điển 30%, Jazz 20%: học mức tiếng xì từ những
   đoạn yên nhất, rồi trừ đi ở dải cao. Còn nghe xào xào thì tăng lên 50–60%. Tiếng chổi trống,
   shaker cũng là tiếng "xì" nên sẽ nhỏ đi một chút.
-- **Âm "s" chói**, mặc định tắt: giảm dải 5–10 kHz ở những lúc dải này vọt lên. Chỉ bật khi
-  giọng hát bị chói, vì nó cũng làm hi-hat nhỏ đi.
+- **Âm "s" chói**, mặc định tắt, kiểu Giáng sinh cổ điển bật 30% (hợp xướng): giảm dải 5–10 kHz ở những
+  lúc dải này vọt lên. Chỉ bật khi giọng hát bị chói, vì nó cũng làm hi-hat nhỏ đi.
 
 Sau khi master, nghe file **phần đã khử**: nó chỉ nên chứa tiếng rè, rít, xì. Nếu nghe rõ nhạc
 trong đó, hãy giảm mức khử xuống.
@@ -151,7 +152,8 @@ thể đẩy đỉnh lên một chút.
 .venv/bin/bokin-suno master --help                                            # mọi tuỳ chọn
 ```
 
-Preset trong dòng lệnh: `streaming`, `loud`, `gentle`, `clean_only`, `bossa`, `jazz`, `dark_piano`.
+Preset trong dòng lệnh: `streaming`, `loud`, `gentle`, `clean_only`, `bossa`, `jazz`, `dark_piano`,
+`classical_christmas`.
 
 ## Kiểu Bossa nova và kiểu Jazz
 
@@ -245,6 +247,64 @@ giữa mạnh, một đoạn lặng, và có tiếng xì, rè, tiếng hộp, ti
 Phần bị khử ở đoạn mạnh thấp hơn tiếng đàn 43 dB, tức tiếng piano gần như không bị đụng tới. Nốt La
 lặp lại không bị coi là tiếng rít. Nếu muốn sáng hơn, tăng *Độ sáng* về 0. Nếu muốn to hơn cho
 YouTube, đặt độ to -14 LUFS trong mục Tuỳ chỉnh: đổi lại, tiếng gõ phím sẽ bị nén nhiều hơn.
+
+## Kiểu Giáng sinh cổ điển
+
+Cho nhạc Giáng sinh giao hưởng và hợp xướng (Silent Night, O Holy Night, Kẹp hạt dẻ...): **rộng, trong,
+giữ độ động lớn**.
+- **Giữ độ động**: không nén song song, nén "dính" rất nhẹ (10%), -16 LUFS và limiter nhả chậm (400 ms).
+  Đoạn pianissimo vẫn nhẹ, đoạn cả dàn nhạc vẫn hoành tráng.
+- Contrebass và timpani có trọng lượng (+1 dB ở 100 Hz). Tiếng đục ở 300 Hz do vang nhà thờ dồn lại được
+  bớt đi. Lời hợp xướng rõ hơn (+1 dB ở 2,5 kHz). Tiếng vĩ cầm rít kiểu Suno được dịu xuống (−2 dB ở
+  3,5 kHz). Dải cao sáng hơn (+1,5 dB ở 10 kHz) cho chuông và hợp xướng.
+- Khử "s" nhẹ (30%), vì hợp xướng của Suno hay "xì" ở âm "s". Bộ khử chỉ ra tay khi dải 5–10 kHz vọt lên
+  đột ngột so với phần còn lại của bài, nên tiếng chuông không bị đụng tới.
+- Khử xì 30% cho các đoạn lặng. Lọc ù ở 20 Hz để giữ pedal organ và timpani. Bass mono dưới 60 Hz, để dàn
+  dây trầm vẫn có độ rộng.
+
+| Bước | Giáng sinh cổ điển | Nghe trực tuyến |
+|---|---|---|
+| Độ to | -16 LUFS | -14 LUFS |
+| Bass 100 Hz | +1 dB (contrebass, timpani) | 0 |
+| Bớt đục 300 Hz | −1,5 dB (vang nhà thờ) | 0 |
+| Độ rõ 2,5 kHz | +1 dB (lời hợp xướng) | 0 |
+| Bớt gắt 3,5 kHz | −2 dB (vĩ cầm rít) | 0 |
+| Độ sáng 10 kHz | +1,5 dB (chuông) | 0 |
+| Độ ấm | 20% | tắt |
+| Độ dày | tắt (giữ độ động) | tắt |
+| Nén "dính" | 10% | 30% |
+| Shimmer | 50% | 50% |
+| Tiếng xì nền | 30% | tắt |
+| Âm "s" chói | 30% (hợp xướng) | tắt |
+| Bass mono dưới | 60 Hz | 120 Hz |
+| Limiter nhả | 400 ms | 80 ms |
+
+Đo trên một bài Giáng sinh giao hưởng tạo bằng code, dài 48 giây, giọng Đô trưởng: dàn dây (vĩ cầm, viola,
+cello, contrebass), hợp xướng hát "aah" có âm "s" ở đầu từ, chuông glockenspiel và chuông ống, timpani, vang
+nhà thờ 3,5 giây. Bài mở đầu pp, rồi hợp xướng vào, rồi cả dàn nhạc ff, rồi nhỏ dần, cuối cùng là một đoạn
+lặng. Bài có tiếng vĩ cầm rít, tiếng đục, tiếng xì, tiếng rè kiểu Suno. Bài được đo hai lần: bản gốc với độ
+động lớn như một bản thu giao hưởng, và bản đã bị nén to lên -11 LUFS như Suno thường làm:
+
+| | Nghe trực tuyến | Giáng sinh cổ điển |
+|---|---|---|
+| Bản gốc (LRA 20,9 LU): độ động sau master | 17,0 LU | 19,9 LU |
+| Bản gốc: đoạn ff to hơn đoạn pp (lúc đầu 16,4 dB) | 14,6 dB | 15,8 dB |
+| Bản kiểu Suno (LRA 13,8 LU): độ động sau master | 12,3 LU | 13,9 LU |
+| Bản kiểu Suno: đoạn ff to hơn đoạn pp (lúc đầu 13,2 dB) | 12,2 dB | 12,9 dB |
+| Tiếng xì ở đoạn lặng (so với độ to bài) | −34 dB | −39 dB |
+| Tiếng chuông nổi lên khỏi nền nhạc | 2,9 dB | 3,3 dB |
+| Âm "s" của hợp xướng nổi lên khỏi nền nhạc | 3,8 dB | 3,7 dB |
+| Dải 40–120 Hz (so với dải 500–1000 Hz) | 0 | +1,8 dB |
+| Dải 250–350 Hz | 0 | −1,0 dB |
+| Dải 1,5–2,5 kHz | 0 | +0,6 dB |
+| Dải 3–5 kHz | 0 | −0,9 dB |
+
+Tăng sáng thường làm âm "s" gắt thêm: kiểu Jazz đưa nó lên 4,3 dB. Ở kiểu này, bộ khử "s" giữ âm "s" như
+cũ trong khi chuông sáng hơn. Ở một bài thử có âm "s" mạnh hơn, âm "s" nhỏ đi 3,8 dB mà chuông không đổi.
+Phần bị khử ở đoạn cả dàn nhạc thấp hơn nhạc khoảng 43 dB, và không nốt nào bị coi nhầm là tiếng rít.
+
+Nếu hợp xướng vẫn còn xì ở âm "s", tăng *Âm "s" chói* lên 50%. Nếu muốn to hơn cho YouTube, đặt độ to
+-14 LUFS: bài to hơn 2 dB, đổi lại các cú timpani và đoạn cả dàn nhạc bị nén nhiều hơn.
 
 ## Giới hạn
 

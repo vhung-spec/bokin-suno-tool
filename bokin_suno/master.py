@@ -145,6 +145,19 @@ PRESETS = {
                    "density": 0.2, "mono_bass_hz": 80.0, "release_ms": 300.0,
                    "clean": {"shimmer": 0.45, "dehiss": 0.35, "deess": 0.0, "dewhine": 0.5},
                    "eq": {"bass": 1.5, "mud": -1.5, "harsh": -2.0, "air": -1.0}},
+    # Classical Christmas (orchestra, choir, bells: Silent Night, O Holy
+    # Night, the Nutcracker): open and grand, the dynamics kept. No parallel
+    # compression and the lightest glue, so pianissimo stays quiet and the
+    # tutti grand; -16 LUFS and a slow limiter release. Weight for basses and
+    # timpani, the mud a church reverb leaves at 300 Hz taken out, choir words
+    # forward (2.5 kHz), Suno's screechy violins softened (3.5 kHz), air for
+    # bells and the choir. A light de-esser for the choir's lisping "s" (it
+    # leaves bells alone), hiss removal for the quiet passages, low cut at 20 Hz
+    # for organ pedals and timpani.
+    "classical_christmas": {"target_lufs": -16.0, "ceiling_db": -1.0, "lowcut_hz": 20.0, "glue": 0.1,
+                            "warmth": 0.2, "density": 0.0, "mono_bass_hz": 60.0, "release_ms": 400.0,
+                            "clean": {"shimmer": 0.5, "dehiss": 0.3, "deess": 0.3, "dewhine": 0.5},
+                            "eq": {"bass": 1.0, "mud": -1.5, "presence": 1.0, "harsh": -2.0, "air": 1.5}},
 }
 
 
