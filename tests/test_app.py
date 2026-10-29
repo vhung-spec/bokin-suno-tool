@@ -88,3 +88,30 @@ def test_a_broken_file_fails_cleanly(client):
                       data={"settings": "{}"})
     job = wait(client, res.json()["id"])
     assert job["state"] == "failed" and job["error"]
+
+
+def test_every_preset_fits_the_page_controls():
+    # a value a control cannot show is silently changed when the page sends it
+    # back (a select without the option reads "", that is 0: off)
+    import re
+    from pathlib import Path
+
+    from bokin_suno.master import PRESETS, preset
+
+    page = (Path(app_mod.__file__).parent / "static" / "index.html").read_text(encoding="utf-8")
+    inputs = {m["id"]: m for m in re.finditer(r'<input type="(?:range|number)" id="(?P<id>\w+)" min="(?P<min>[-\d.]+)"'
+                                              r' max="(?P<max>[-\d.]+)" step="(?P<step>[\d.]+)"', page)}
+    select = re.search(r'<select id="mono_bass_hz">(.*?)</select>', page, re.S)[1]
+    options = {float(v) for v in re.findall(r'<option value="([-\d.]+)">', select)}
+    assert inputs and options
+    for name in PRESETS:
+        s = preset(name).to_dict()
+        values = {**s, **s["clean"], **s["eq"]}
+        assert s["mono_bass_hz"] in options, (name, "mono_bass_hz")
+        for key, m in inputs.items():
+            value = values[key]
+            if value is None:  # target_lufs None: "keep the loudness" is ticked instead
+                continue
+            low, high, step = float(m["min"]), float(m["max"]), float(m["step"])
+            assert low <= value <= high, (name, key, value)
+            assert abs((value - low) / step - round((value - low) / step)) < 1e-6, (name, key, value)
