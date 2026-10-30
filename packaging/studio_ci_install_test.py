@@ -180,6 +180,7 @@ def update(installer, version):
 
 
 if __name__ == "__main__":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     if len(sys.argv) >= 3 and sys.argv[1] == "install":
         install(os.path.abspath(sys.argv[2]))
     elif len(sys.argv) >= 4 and sys.argv[1] == "update":
