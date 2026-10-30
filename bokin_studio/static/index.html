@@ -296,7 +296,11 @@ function show(view) {
 }
 
 // ---- Suno accounts ----
+let shownAccounts = null;
 function renderAccounts(list) {
+  const key = JSON.stringify(list);
+  if (key === shownAccounts) return;  // (redrawn only when it changed: an open list stays open)
+  shownAccounts = key;
   const tbody = $("accounts"); tbody.replaceChildren();
   for (const a of list) {
     const tr = el("tr"); tr.append(el("td", a.name), el("td", a.added));
