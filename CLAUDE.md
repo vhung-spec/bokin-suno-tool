@@ -44,3 +44,22 @@
 - Suno giả lập phải đi cùng `SEL`: sửa selector thì sửa cả Suno giả lập và bài thử.
 - Chưa thử trên suno.com thật: máy chủ phiên làm việc không vào được suno.com; sửa `SEL` theo ảnh và file `.html` chủ
   gửi.
+- Lời bài hát: tải xong một bài, tool lưu lời đang hiện trên trang bài hát vào `Tên bài.txt` cạnh file nhạc
+  (`web.JS_LYRICS`, `SEL["lyrics"]`; chưa thử trên suno.com thật). Một tên file (bỏ đuôi) thuộc về một bài.
+- Máy chủ phiên làm việc chỉ có Chromium của Playwright, không có Google Chrome: ở đó `tests/test_suno.py` hỏng từ
+  lần tải thứ hai (Chromium đóng trang khi mở lại hồ sơ đã tải file), cả trên `main`. CI dùng Chrome thật.
+
+## Bokin Suno Studio (app Windows gộp ba công cụ)
+- Hướng dẫn: `BOKIN-SUNO-STUDIO.md`. Nhánh `claude/bokin-suno-studio` (đã gộp nhánh của Bokin Suno Master
+  `claude/suno-ai-mastering-tool-rfg0o5`, gói `bokin_suno/` giữ nguyên để sau gộp tiếp được).
+- Gói `bokin_studio/` (tên khác `bokin_suno` của app master): làm theo mẫu app master (FastAPI 127.0.0.1, mã bảo vệ
+  mỗi lần mở, cửa sổ Edge/Chrome dạng app, một bản mỗi người dùng). Bốn thẻ: Tài khoản Suno, Tải nhạc (chạy
+  `suno/bokin_suno.py` thành chương trình riêng: `BokinSunoStudio.exe suno ...`), Đổi lời (`loi-dong-am/` trong
+  khung, không sửa), Master (trang của app master trong khung, cùng API `/api/jobs`...).
+- Bokin License: sản phẩm `suno-studio`, bit 8 (đã thêm vào `vhung-spec/Bokin-License`, `bokin_license/` chép lại).
+- **Không làm hỏng tự cập nhật của app master:** app master đọc bản phát hành "Latest" của repo này. Bản phát hành
+  của Studio luôn `--latest=false`: tag `studio-v<phiên bản>`, và bản `studio-latest` giữ
+  `bokin-suno-studio-latest.json` (Studio đọc ở đó) cùng `BokinSunoStudio-Setup.exe`. Workflow
+  `.github/workflows/bokin-suno-studio.yml` kiểm tra lại "Latest" sau khi phát hành.
+- Kiểm tra: `python -m pytest -q` (cả `tests/studio/test_e2e.py`: trang thật trong Chrome với Suno giả lập; không có
+  Chrome thì đặt `BOKIN_STUDIO_CHROME`); `python -m bokin_studio --selftest`.

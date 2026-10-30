@@ -2,6 +2,18 @@
 
 Công cụ hỗ trợ làm cover trên Suno AI.
 
+## Bokin Suno Studio: một app cho cả ba việc
+
+**Bokin Suno Studio** là app Windows gộp ba công cụ dưới đây vào một cửa sổ:
+
+1. **Tải nhạc** từ một workspace Suno về máy, kèm **lời bài hát** (file `.txt` cạnh file nhạc).
+2. **Đổi lời** tiếng Anh để dán vào Suno (Lời Đồng Âm): bấm **Đổi lời** ở một bài vừa tải là lời đó được đưa sang.
+3. **Master** bài hát (Bokin Suno Master): bấm **Master** ở một bài vừa tải.
+
+Cài đặt và cách dùng: [BOKIN-SUNO-STUDIO.md](BOKIN-SUNO-STUDIO.md).
+
+Ba công cụ vẫn dùng riêng được như trước: Lời Đồng Âm (trang web), Bokin Suno (dòng lệnh), Bokin Suno Master (app).
+
 ## Lời Đồng Âm
 
 Đổi lời bài hát **tiếng Anh** để Suno vẫn hát như cũ, nhưng chữ không còn trùng nguyên văn với bản lời có sẵn trên
@@ -129,7 +141,7 @@ Mỗi bài cho ra ba file:
 - `<tên>_removed.wav`: **phần đã khử** (shimmer, tiếng rít...), để bạn nghe xem công cụ đã bỏ đi những gì;
 - `<tên>_report.json`: số đo trước/sau và việc từng bước đã làm.
 
-## Cài đặt (Windows)
+### Cài đặt (Windows)
 
 1. Mở trang **[Bản phát hành mới nhất](https://github.com/vhung-spec/bokin-suno-tool/releases/latest)**, tải file
    **BokinSunoMaster-Setup-….exe** ở mục *Assets*.
@@ -137,7 +149,7 @@ Mỗi bài cho ra ba file:
    **More info** → **Run anyway** (bộ cài chưa có chữ ký số).
 3. Mở **Bokin Suno Master** từ Desktop hoặc menu Start. App mở trong một cửa sổ riêng.
 
-### Kích hoạt (lần đầu)
+#### Kích hoạt (lần đầu)
 
 App dùng key **Bokin License**, chung với các app Bokin khác:
 
@@ -146,7 +158,7 @@ App dùng key **Bokin License**, chung với các app Bokin khác:
    app) cũng được: kích hoạt ở một app là các app khác trong gói trên máy đó cùng mở.
 3. Dán key vào ô **Key** rồi bấm **Kích hoạt**.
 
-### Tự cập nhật
+#### Tự cập nhật
 
 - App tự kiểm tra bản mới khi mở, rồi 5 phút một lần, và tự tải về ở chế độ nền.
 - Có bản mới thì góc trên hiện nút **Có bản mới … · Cập nhật ngay**. Bấm vào là app tắt, cài bản mới, rồi tự mở lại
@@ -160,7 +172,7 @@ Bài đã master nằm trong thư mục **Nhạc\Bokin Suno Master** (`Music\Bok
 Công cụ chỉ cần CPU, không cần GPU. Trên máy chạy thử (một máy chủ đám mây khá chậm), một bài
 3 phút mất khoảng 30 giây. Máy tính thường sẽ nhanh hơn.
 
-## Chạy từ mã nguồn (WSL2, Linux, macOS)
+### Chạy từ mã nguồn (WSL2, Linux, macOS)
 
 Bản chạy từ mã nguồn cũng cần key (Mã máy của Linux/WSL khác Mã máy của Windows trên cùng máy), và không tự cập
 nhật: lấy bản mới bằng `git pull`.
@@ -174,7 +186,7 @@ git clone -b claude/suno-ai-mastering-tool-rfg0o5 https://github.com/vhung-spec/
 Trên macOS, thay dòng `install.sh` bằng `python3 -m venv .venv && .venv/bin/pip install -e ".[app]"` trong thư mục
 `~/bokin-suno-tool`.
 
-## Cách dùng app
+### Cách dùng app
 
 1. **Chọn bài hát**: kéo thả một hoặc nhiều bài. Nên tải bản **WAV** từ Suno: bản MP3 đã mất
    một phần chất lượng.
@@ -204,7 +216,7 @@ bản to hơn là "hay hơn", nên phải nghe ở cùng độ to mới biết m
 File kết quả nằm trong thư mục **Music\Bokin Suno Master**, mỗi bài một thư mục con (bấm *Thư mục kết quả*, hoặc
 *Tải về* ở từng bài).
 
-## Các tuỳ chỉnh
+### Các tuỳ chỉnh
 
 **Khử lỗi AI** (0–100%)
 - **Shimmer (rè kim loại)**, mặc định 50%: tìm những điểm trên phổ ở dải cao (trên 3,5 kHz)
@@ -241,7 +253,7 @@ to tiếng xì. Ô *Độ to theo bài mẫu* dùng độ to của bài mẫu l�
 Độ to mục tiêu, Trần đỉnh thật. Nếu xuất MP3, đặt trần đỉnh khoảng -1,5 dBTP: bộ mã hoá MP3 có
 thể đẩy đỉnh lên một chút.
 
-## Dùng bằng dòng lệnh
+### Dùng bằng dòng lệnh
 
 ```bash
 .venv/bin/bokin-suno master "Bài 1.wav" "Bài 2.wav"          # preset Nghe trực tuyến, kết quả vào outputs/
@@ -256,7 +268,7 @@ thể đẩy đỉnh lên một chút.
 Preset trong dòng lệnh: `streaming`, `loud`, `gentle`, `clean_only`, `bossa`, `jazz`, `dark_piano`,
 `classical_christmas`.
 
-## Kiểu Bossa nova và kiểu Jazz
+### Kiểu Bossa nova và kiểu Jazz
 
 Cả hai làm bài dày, ấm và rõ hơn mà vẫn giữ chất nhạc chơi tay, nhưng theo hai hướng khác nhau:
 - **Bossa nova**: ấm, gần, mượt. Guitar nylon và giọng hát nhẹ được làm dày, hơi thở và tiếng chổi
@@ -301,7 +313,7 @@ một câu saxophone. Cả hai đều có chút rè và xì kiểu Suno, và có
 Các con số trên đo trên bài giả lập, chưa phải bài Suno thật. Hãy nghe so sánh cùng độ to. Nếu thấy
 quá dày hoặc quá sáng, giảm *Độ dày*, *Độ rõ* hoặc *Độ sáng* trong mục Tuỳ chỉnh.
 
-## Kiểu Dark piano
+### Kiểu Dark piano
 
 Cho nhạc piano buồn, u tối, cinematic (piano solo, hoặc piano với pad, dây, vang dài): **trầm sâu,
 mềm, giữ độ động**.
@@ -349,7 +361,7 @@ Phần bị khử ở đoạn mạnh thấp hơn tiếng đàn 43 dB, tức ti�
 lặp lại không bị coi là tiếng rít. Nếu muốn sáng hơn, tăng *Độ sáng* về 0. Nếu muốn to hơn cho
 YouTube, đặt độ to -14 LUFS trong mục Tuỳ chỉnh: đổi lại, tiếng gõ phím sẽ bị nén nhiều hơn.
 
-## Kiểu Giáng sinh cổ điển
+### Kiểu Giáng sinh cổ điển
 
 Cho nhạc Giáng sinh giao hưởng và hợp xướng (Silent Night, O Holy Night, Kẹp hạt dẻ...): **rộng, trong,
 giữ độ động lớn**.
@@ -407,7 +419,7 @@ Phần bị khử ở đoạn cả dàn nhạc thấp hơn nhạc khoảng 43 dB
 Nếu hợp xướng vẫn còn xì ở âm "s", tăng *Âm "s" chói* lên 50%. Nếu muốn to hơn cho YouTube, đặt độ to
 -14 LUFS: bài to hơn 2 dB, đổi lại các cú timpani và đoạn cả dàn nhạc bị nén nhiều hơn.
 
-## Giới hạn
+### Giới hạn
 
 - Master không sửa được những gì đã hỏng sẵn trong bài: tiếng méo do clip, giọng méo, nhạc cụ
   lẫn vào nhau. App sẽ báo khi bài gốc bị clip.
@@ -417,7 +429,7 @@ Nếu hợp xướng vẫn còn xì ở âm "s", tăng *Âm "s" chói* lên 50%.
   được chỉnh trên nhiều bài Suno thật. Hãy tin tai mình: nghe phần đã khử, và chỉnh mức khử theo
   từng bài.
 
-## Cách làm và nguồn tham khảo
+### Cách làm và nguồn tham khảo
 
 Toàn bộ code tự viết (NumPy, SciPy, soundfile), không chép code của dự án khác. Các ý tưởng tham khảo:
 - Khử shimmer bằng cách so mỗi điểm trên phổ với trung vị của các điểm lân cận theo thời gian và
@@ -429,7 +441,7 @@ Toàn bộ code tự viết (NumPy, SciPy, soundfile), không chép code của d
   vì pyloudnorm dùng bộ lọc gần đúng.
 - EQ theo RBJ Audio EQ Cookbook.
 
-## Phát triển
+### Phát triển
 
 ```bash
 .venv/bin/pip install -e ".[app,dev]"
