@@ -4,7 +4,8 @@ Runs the program as a person would (python suno/bokin_suno.py ...): sign in, che
 it scrolls, a few songs first (--limit), then the rest with a song still being made and a song page that fails once,
 a second run that reads only the top of the list yet tries the unfinished song again, the lyrics kept next to each
 song (none for an instrumental), MP3 through a "uses 1 download" box opening in a new tab, several links at once (one
-of them bad), a Load more button, the Stop button of Bokin Suno Studio, the plan's downloads used up (nothing
+of them bad), a Load more button, the Stop button of Bokin Suno Studio, a Suno page
+without window.Clerk (only Clerk's cookies tell who is signed in), the plan's downloads used up (nothing
 bought), a changed Suno page, the wrong account, a sign-out, removing the account.
 
   python tests/test_suno.py [--headless] [--chrome PATH] [--keep]
@@ -105,6 +106,16 @@ def main():
         accounts = json.loads((data / "accounts.json").read_text(encoding="utf-8"))
         check(accounts.get("suno1", {}).get("user_id") == USER_ID, "accounts.json has the Suno user ID")
         check(fake.signins == 1, "signed in once")
+
+        print("== a Suno page without window.Clerk (as suno.com on the owner's computer): Clerk's cookies tell")
+        fake.config["clerk_global"] = False
+        cli("login", "suno2", contains="Đã lưu tài khoản suno2")
+        accounts = json.loads((data / "accounts.json").read_text(encoding="utf-8"))
+        check(accounts.get("suno2", {}).get("user_id") == USER_ID, "the user ID read from the session cookie")
+        cli("check", "suno2", contains="đang đăng nhập")
+        cli("list", "suno2", link, contains=f"Có {len(fake.workspace)} bài")
+        fake.config["clerk_global"] = True
+        cli("remove", "suno2", contains="Đã xoá")
         fake.config["auto_signin"] = False
         cli("check", contains="đang đăng nhập")
         cli("accounts", contains="suno1")

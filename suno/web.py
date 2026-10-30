@@ -9,6 +9,8 @@ the plan's downloads are used up, the run stops. The program never presses a Buy
 audio any other way. Every selector and button text is in SEL. BOKIN_SUNO_URL points the program at a stand-in Suno
 (tests/fake_suno.py).
 """
+import base64
+import json
 import os
 import re
 import time
@@ -43,7 +45,8 @@ SONG_ID_RE = re.compile(r"/song/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}
 AUDIO_URL_RE = re.compile(r"\.(wav|mp3)$", re.I)
 
 # window.Clerk is Suno's sign-in library: 'in:<user id>', 'out', 'loading' or 'none' (not on the page). It lives in
-# the page's own JavaScript world, so it is read with isolated_context=False (patchright reads in a separate world)
+# the page's own JavaScript world, so it is read with isolated_context=False (patchright reads in a separate world).
+# A page may not show it (suno.com did not, on the owner's computer): Clerk's own cookies say it too (cookie_state).
 JS_STATE = """() => { const c = window.Clerk; if (!c) return 'none'; if (!c.loaded) return 'loading';
   return c.user ? 'in:' + (c.user.id || '') : 'out'; }"""
 
@@ -193,6 +196,41 @@ def _poll(page, find, timeout_ms, step_ms=100):
         page.wait_for_timeout(step_ms)
 
 
+def _jwt_subject(token):
+    """The "sub" (Clerk's user id) of a session token, read without checking it: only to tell accounts apart."""
+    try:
+        part = token.split(".")[1]
+        payload = json.loads(base64.urlsafe_b64decode(part + "=" * (-len(part) % 4)))
+        sub = payload.get("sub")
+        return sub if isinstance(sub, str) and sub else None
+    except (IndexError, ValueError, AttributeError, TypeError):
+        return None
+
+
+def cookie_state(context):
+    """Clerk's cookies on suno.com: __client_uat is the time of the last sign-in ("0" once signed out), __session the
+    session's token (its "sub" is the user id). ('in', user id or None), ('out', None), or (None, None): no such
+    cookie. Names may carry a suffix (__client_uat_xxxx)."""
+    try:
+        cookies = context.cookies(BASE + "/")
+    except Exception:
+        return None, None
+
+    def named(c, name):
+        return c.get("name") == name or str(c.get("name", "")).startswith(name + "_")
+
+    uat = [str(c.get("value", "")).strip() for c in cookies if named(c, "__client_uat")]
+    if not uat:
+        return None, None
+    if all(v in ("", "0") for v in uat):
+        return "out", None
+    user = None
+    for c in cookies:
+        if named(c, "__session"):
+            user = _jwt_subject(str(c.get("value", ""))) or user
+    return "in", user
+
+
 def _signed_out_url(url):
     return bool(re.search(r"/(sign-?in|log-?in|sign-?up)\b|accounts\.", url, re.I))
 
@@ -208,13 +246,17 @@ def page_state(page, wait_seconds=25):
         except Exception:
             s = "loading"  # the page is still navigating
         if s.startswith("in:"):
-            return "in", s[3:] or None
+            return "in", s[3:] or cookie_state(page.context)[1]
         if s == "out":
             return "out", None
         waited = time.monotonic() - start
-        if (s == "none" and waited > 8) or waited > wait_seconds:
-            # no sign-in library to ask: a Sign in button means signed out
-            return ("out", None) if _visible(page.locator(SEL["sign_in"]).first) else ("in", None)
+        if (s == "none" and waited > 4) or waited > wait_seconds:
+            # no sign-in library to ask on the page: Clerk's cookies, and a Sign in button means signed out
+            if _visible(page.locator(SEL["sign_in"]).first):
+                return "out", None
+            state, user = cookie_state(page.context)
+            if state or waited > wait_seconds or waited > 8:
+                return ("in", user) if state != "out" else ("out", None)
         page.wait_for_timeout(500)
 
 
@@ -245,6 +287,7 @@ def wait_for_login(context, log, settle_seconds=None, limit_minutes=30):
     page.goto(BASE + "/", wait_until="domcontentloaded", timeout=90_000)
     host = urlparse(BASE).netloc.lower()
     signed_in, user, seen_at = False, None, 0.0
+    seen = None
     deadline = time.monotonic() + limit_minutes * 60
     while not closed and time.monotonic() < deadline:
         try:
@@ -253,6 +296,8 @@ def wait_for_login(context, log, settle_seconds=None, limit_minutes=30):
             break
         if not pages:
             break
+        page_says = None  # what Suno's own pages say: 'in:<id>', 'out', or None (no page could tell)
+        where = [urlparse(p.url).netloc + urlparse(p.url).path for p in pages]
         for p in pages:
             if urlparse(p.url).netloc.lower() not in (host, "www." + host):
                 continue
@@ -260,17 +305,32 @@ def wait_for_login(context, log, settle_seconds=None, limit_minutes=30):
                 s = p.evaluate(JS_STATE, isolated_context=False)
             except Exception:
                 continue
-            if s.startswith("in:") and (not signed_in or (s[3:] or None) != user):
-                signed_in, user, seen_at = True, s[3:] or None, time.monotonic()
-                log.info("Đã thấy đăng nhập Suno. Giờ đóng cửa sổ Chrome.")
-            elif s == "out" and signed_in:
-                signed_in, user = False, None
+            if s.startswith("in:") or (s == "out" and page_says is None):
+                page_says = s
+        cookies = cookie_state(context)
+        if (page_says, cookies[0], where) != seen:
+            seen = (page_says, cookies[0], where)
+            log.debug("sign-in: pages %s, Clerk on the page %s, Clerk's cookies %s", where, page_says, cookies[0])
+        if page_says and page_says.startswith("in:"):
+            now_in, now_user = True, page_says[3:] or cookies[1]
+        elif page_says == "out":
+            now_in, now_user = False, None
+        else:
+            now_in, now_user = cookies[0] == "in", cookies[1]
+        if now_in and (not signed_in or now_user != user):
+            signed_in, user, seen_at = True, now_user, time.monotonic()
+            log.info("Đã thấy đăng nhập Suno. Giờ đóng cửa sổ Chrome.")
+        elif not now_in and signed_in and (page_says == "out" or cookies[0] == "out"):
+            signed_in, user = False, None
         if settle_seconds and signed_in and time.monotonic() - seen_at >= settle_seconds:
             break
         try:
             context.wait_for_event("close", timeout=1000)
         except Exception:
             pass
+    if not signed_in and seen:
+        log.info("Lần cuối thấy: trang %s, Clerk trên trang: %s, cookie đăng nhập: %s", ", ".join(seen[2]) or "-",
+                 seen[0] or "không có", seen[1] or "không có")
     return signed_in, user
 
 

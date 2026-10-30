@@ -21,6 +21,7 @@ BOKIN_SUNO_DATA. The profiles hold the accounts' Suno sign-ins: never copy or sh
 file: once it exists, a download stops before its next song (Bokin Suno Studio's Stop button).
 """
 import argparse
+import base64
 import contextlib
 import json
 import logging
@@ -488,6 +489,21 @@ def cmd_selftest(args, data):
                 pass
     finally:
         web.BASE = base
+    tok = "eyJhbGciOiJSUzI1NiJ9." + base64.urlsafe_b64encode(b'{"sub":"user_2abc","sid":"s"}').decode().rstrip("=") + ".x"
+    check(web._jwt_subject(tok) == "user_2abc" and web._jwt_subject("junk") is None, "user id from a session token")
+
+    class Jar:
+        def __init__(self, cookies):
+            self.list = [{"name": k, "value": v} for k, v in cookies]
+
+        def cookies(self, url):
+            return self.list
+
+    check(web.cookie_state(Jar([("__client_uat", "1793000000"), ("__session", tok)])) == ("in", "user_2abc"),
+          "signed in by Clerk's cookies")
+    check(web.cookie_state(Jar([("__client_uat_Ab1", "1793000000")])) == ("in", None), "a suffixed cookie name")
+    check(web.cookie_state(Jar([("__client_uat", "0"), ("__session", tok)])) == ("out", None), "signed out")
+    check(web.cookie_state(Jar([("other", "1")])) == (None, None), "no Clerk cookie")
     sel = web.SEL
     check(sel["text_format"]["wav"].search("WAV Audio") and not sel["text_format"]["wav"].search("MP3 Audio"), "wav")
     check(sel["text_format"]["mp3"].search("MP3 Audio") and not sel["text_format"]["mp3"].search("Video"), "mp3")

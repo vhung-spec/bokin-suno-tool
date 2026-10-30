@@ -1,6 +1,8 @@
 """A stand-in suno.com for the tests: sign-in, a workspace's song list, a song page with its Download menu and box.
 
-It copies only what the program touches (suno/web.py SEL): window.Clerk for the sign-in state, song links in a
+It copies only what the program touches (suno/web.py SEL): window.Clerk for the sign-in state (or, with
+config["clerk_global"] off, as suno.com showed on the owner's computer, none: only Clerk's cookies __client_uat and
+__session, a token whose "sub" is the user id), song links in a
 scrolling list that loads more as it scrolls (or by a Load more button) and drops rows scrolled far away, a player
 bar with a link to a song not in the workspace, More Options → Download → MP3 Audio / WAV Audio, the WAV box that
 prepares the file before its Download File button works, an optional "uses 1 download" box for MP3, the box saying
@@ -9,6 +11,7 @@ the plan's downloads are used up, with a Buy button that must never be pressed, 
 (from a blob or a link) or open in a new tab, as `config["delivery"]` says. Like Suno, a song counts as one download
 whatever the format and however often it is downloaded.
 """
+import base64
 import hashlib
 import html
 import json
@@ -43,7 +46,8 @@ def default_lyrics(title):
 class FakeSuno:
     def __init__(self):
         self.config = {"auto_signin": True, "user_id": USER_ID, "delivery": "blob", "confirm": False,
-                       "downloads_left": None, "paging": "scroll", "prepare_ms": 800, "more_label": "More Options"}
+                       "downloads_left": None, "paging": "scroll", "prepare_ms": 800, "more_label": "More Options",
+                       "clerk_global": True}
         self.sessions = set()
         self.signins = 0
         self.songs = {}
@@ -105,7 +109,8 @@ class FakeSuno:
 
             def _page(self, body, script=""):
                 user = json.dumps({"id": fake.config["user_id"]}) if self._signed_in() else "null"
-                return self._send(200, PAGE.replace("__USER__", user).replace("__BODY__", body)
+                clerk = "Clerk" if fake.config["clerk_global"] else "__clerkInsideABundle"
+                return self._send(200, PAGE.replace("__USER__", user).replace("__CLERK__", clerk).replace("__BODY__", body)
                                   .replace("__SCRIPT__", script))
 
             def do_GET(self):
@@ -117,7 +122,8 @@ class FakeSuno:
                 if u.path == "/":
                     auto = "true" if fake.config["auto_signin"] else "false"
                     return self._page('<h1>Explore</h1>' + ("" if self._signed_in() else SIGN_IN_BUTTON),
-                                      f"setTimeout(() => {{ if (!window.Clerk.user && {auto}) location.href = "
+                                      f"setTimeout(() => {{ if (!document.cookie.includes('__client_uat=1') && {auto}) "
+                                      f"location.href = "
                                       f"'/sign-in'; }}, 500);")
                 if len(parts) == 2 and parts[0] in ("files", "cdn"):
                     sid, _, fmt = parts[1].rpartition(".")
@@ -163,11 +169,14 @@ class FakeSuno:
                 parts = [p for p in u.path.split("/") if p]
                 self.rfile.read(int(self.headers.get("Content-Length") or 0))
                 if u.path == "/sign-in":
-                    sid = secrets.token_hex(16)
+                    payload = json.dumps({"sub": fake.config["user_id"], "sid": secrets.token_hex(8)}).encode()
+                    sid = ".".join(base64.urlsafe_b64encode(p).decode().rstrip("=") for p in
+                                   (b'{"alg":"RS256"}', payload, secrets.token_bytes(16)))
                     fake.sessions.add(sid)
                     fake.signins += 1
                     return self._send(303, b"", headers=(
-                        ("Set-Cookie", f"__session={sid}; Max-Age=31536000; Path=/; HttpOnly"), ("Location", "/")))
+                        ("Set-Cookie", f"__session={sid}; Max-Age=31536000; Path=/"),
+                        ("Set-Cookie", "__client_uat=1793000000; Max-Age=31536000; Path=/"), ("Location", "/")))
                 if not self._signed_in():
                     return self._send(401, "signed out")
                 if u.path == "/api/buy":
@@ -208,8 +217,8 @@ PAGE = """<!doctype html>
 </style></head>
 <body>
 <script>
-window.Clerk = {loaded: false, user: null};
-setTimeout(() => { window.Clerk.user = __USER__; window.Clerk.loaded = true; }, 300);
+window.__CLERK__ = {loaded: false, user: null};
+setTimeout(() => { window.__CLERK__.user = __USER__; window.__CLERK__.loaded = true; }, 300);
 </script>
 __BODY__
 <script>__SCRIPT__</script>
