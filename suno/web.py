@@ -1,8 +1,9 @@
 """suno.com, driven in a real Chrome: sign in once, read the songs of a workspace, download each song.
 
 No Suno API: the program does what a person does on suno.com. It opens the workspace (or playlist) link, reads the
-song links in its list while scrolling, then for each song opens the song's page and presses More options →
-Download → WAV Audio (or MP3 Audio), answers Suno's download box and keeps the file Chrome receives. Downloads go
+song links in its list while scrolling, then for each song opens the song's page, reads the lyrics it shows, and
+presses More options → Download → WAV Audio (or MP3 Audio), answers Suno's download box and keeps the file Chrome
+receives. Downloads go
 through Suno's own Download button, so Suno counts them exactly as when a person downloads by hand; when Suno says
 the plan's downloads are used up, the run stops. The program never presses a Buy/Upgrade button and never takes the
 audio any other way. Every selector and button text is in SEL. BOKIN_SUNO_URL points the program at a stand-in Suno
@@ -27,6 +28,9 @@ SEL = {
     "dialog": '[role="dialog"], [role="alertdialog"]',
     "dialog_button": 'button, a[href], [role="button"]',
     "song_title": "h1",
+    # the lyrics on a song page: these first, else the longest multi-line text shown with its line breaks kept
+    # (white-space: pre*), outside menus, boxes, links and buttons (JS_LYRICS)
+    "lyrics": '[data-testid*="lyrics" i]',
     # button and box texts (English UI)
     "text_download": re.compile(r"^download\b", re.I),
     "text_format": {"wav": re.compile(r"\bwav\b", re.I), "mp3": re.compile(r"\bmp3\b", re.I)},
@@ -77,6 +81,23 @@ JS_COLLECT = r"""(sel) => {
   box.scrollTop = before + Math.max(200, box.clientHeight * 0.8);
   const bottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 4;
   return {songs, bottom, height: box.scrollHeight};
+}"""
+
+
+# The lyrics a song page shows, as plain text ("" for none: an instrumental, or a page laid out otherwise)
+JS_LYRICS = r"""(sel) => {
+  const away = 'nav, header, footer, aside, a, button, textarea, input, [role="dialog"], [role="alertdialog"], '
+    + '[role="menu"], [contenteditable="true"]';
+  const shown = (el) => el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden';
+  const text = (el) => (el.innerText || '').replace(/\r/g, '').replace(/\n{3,}/g, '\n\n').trim();
+  for (const el of document.querySelectorAll(sel)) if (shown(el) && text(el)) return text(el).slice(0, 20000);
+  let best = '';
+  for (const el of document.querySelectorAll('p, div, span, pre, section')) {
+    if (!shown(el) || el.closest(away) || !/^pre/.test(getComputedStyle(el).whiteSpace)) continue;
+    const t = text(el);
+    if (t.includes('\n') && t.length > best.length) best = t;
+  }
+  return best.slice(0, 20000);
 }"""
 
 
@@ -352,6 +373,14 @@ def _song_title(page):
     return title
 
 
+def song_lyrics(page):
+    """The lyrics the song page shows, or "" (none found: never an error)."""
+    try:
+        return page.evaluate(JS_LYRICS, SEL["lyrics"]) or ""
+    except Exception:
+        return ""
+
+
 def _open_format_item(page, fmt):
     """More options → Download → WAV/MP3; returns the format item, ready to click."""
     more = page.locator(SEL["more"]).first
@@ -413,7 +442,8 @@ def _answer_dialog(page, clicked):
 
 
 def download_song(page, catcher, song, fmt, dest, log, timeout_seconds=300):
-    """Downloads one song through its page's Download button into `dest`. Returns the title the page shows."""
+    """Downloads one song through its page's Download button into `dest`. Returns (the title the page shows, the
+    lyrics it shows or "")."""
     page.goto(song.link, wait_until="domcontentloaded", timeout=90_000)
     catcher.reset()
     try:
@@ -423,6 +453,7 @@ def download_song(page, catcher, song, fmt, dest, log, timeout_seconds=300):
             raise SunoError("not_signed_in", "Tài khoản Suno đã bị đăng xuất. Chạy lại: suno login <tên>")
         raise
     title = song.title or _song_title(page)
+    lyrics = song_lyrics(page)
     if not _enabled(item):
         raise SunoError("not_ready", f"Suno chưa cho tải bài này dạng {fmt.upper()} (bài chưa tạo xong hoặc bị lỗi)")
     item.click()
@@ -452,7 +483,7 @@ def download_song(page, catcher, song, fmt, dest, log, timeout_seconds=300):
     else:
         raise SunoError("stuck", f"Đã bấm tải {fmt.upper()} nhưng sau {timeout_seconds} giây vẫn chưa nhận được file")
     page.keyboard.press("Escape")  # close the download box, if it stays open
-    return title
+    return title, lyrics
 
 
 def save_failure(page, path_stem):

@@ -15,6 +15,7 @@ PRODUCTS = {
     "upscaler": (5, "Bokin Upscaler"),
     "playlist-planner": (6, "Bokin Playlist Planner"),  # added 2026-10-28
     "suno-master": (7, "Bokin Suno Master"),  # added 2026-10-28
+    "suno-studio": (8, "Bokin Suno Studio"),  # added 2026-10-30
 }
 
 

@@ -4,8 +4,8 @@ It copies only what the program touches (suno/web.py SEL): window.Clerk for the 
 scrolling list that loads more as it scrolls (or by a Load more button) and drops rows scrolled far away, a player
 bar with a link to a song not in the workspace, More Options → Download → MP3 Audio / WAV Audio, the WAV box that
 prepares the file before its Download File button works, an optional "uses 1 download" box for MP3, the box saying
-the plan's downloads are used up, with a Buy button that must never be pressed, and song pages that fail once
-(`fail_once`). Files arrive as a download
+the plan's downloads are used up, with a Buy button that must never be pressed, song pages that fail once
+(`fail_once`), and the lyrics on a song page (none for an instrumental). Files arrive as a download
 (from a blob or a link) or open in a new tab, as `config["delivery"]` says. Like Suno, a song counts as one download
 whatever the format and however often it is downloaded.
 """
@@ -34,6 +34,12 @@ def audio_bytes(song_id, fmt):
     return b"ID3\x04\x00\x00\x00\x00\x00\x00" + body
 
 
+def default_lyrics(title):
+    """A song's lyrics: tags, verses, a blank line, and text that must stay text (lyrics are not trusted)."""
+    return (f"[Verse]\nSilent night, holy night\nAll is calm, all is bright\n\n[Chorus]\n{title}\n"
+            "<img src=x onerror=\"document.title='pwned'\"> & more")
+
+
 class FakeSuno:
     def __init__(self):
         self.config = {"auto_signin": True, "user_id": USER_ID, "delivery": "blob", "confirm": False,
@@ -59,9 +65,11 @@ class FakeSuno:
     def stop(self):
         self.server.shutdown()
 
-    def add_song(self, title, status="complete", in_workspace=True):
+    def add_song(self, title, status="complete", in_workspace=True, lyrics=None):
         sid = str(uuid.uuid4())
-        self.songs[sid] = {"title": title, "status": status}
+        if lyrics is None:
+            lyrics = default_lyrics(title)
+        self.songs[sid] = {"title": title, "status": status, "lyrics": lyrics}
         if in_workspace:
             self.workspace.insert(0, sid)  # newest first, as Suno lists them
         return sid
@@ -143,7 +151,9 @@ class FakeSuno:
                     body = (SONG_BODY.replace("__TITLE__", html.escape(song["title"]))
                             .replace("__MORE__", html.escape(fake.config["more_label"]))
                             .replace("__DISABLED__", "" if song["status"] == "complete" else 'aria-disabled="true"')
-                            .replace("__STRAY__", fake.stray))
+                            .replace("__STRAY__", fake.stray)
+                            .replace("__LYRICS__", LYRICS_BODY.replace("__TEXT__", html.escape(song["lyrics"]))
+                                     if song["lyrics"] else ""))
                     return self._page(body, SONG_SCRIPT.replace("__CFG__", cfg))
                 return self._send(404, "not found")
 
@@ -272,9 +282,13 @@ SONG_BODY = """
   <div role="menuitem" data-fmt="video">Video</div>
 </div>
 <div role="dialog" id="dlg" hidden></div>
+__LYRICS__
 <section><h3>Comments</h3><div>Nice! <button aria-label="More Options">...</button></div></section>
 <div class="player">Now playing: <a href="/song/__STRAY__">Bài đang phát</a></div>
 """
+
+LYRICS_BODY = """<section><h3>Lyrics</h3><p class="whitespace-pre-wrap" style="white-space: pre-wrap">__TEXT__</p>
+</section>"""
 
 SONG_SCRIPT = """
 const cfg = __CFG__;

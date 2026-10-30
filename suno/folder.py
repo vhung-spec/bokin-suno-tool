@@ -3,7 +3,8 @@
 A song (in a format) listed in danh-sach.csv as "xong" is not downloaded again, even if its file was deleted or
 renamed; delete its line to download it again. A song listed as "loi" (it failed) is tried again on every run, found
 by its link, even when the workspace's list is no longer read that far. Files are named after the song title as Suno
-shows it; two songs with the same title (Suno makes songs in pairs) get "Title (2).wav". Titles come from Suno and
+shows it; two songs with the same title (Suno makes songs in pairs) get "Title (2).wav". A name (without its
+extension) belongs to one song, whatever the format: its lyrics are kept in "Title.txt". Titles come from Suno and
 are not trusted: anything Windows or Linux would read as a path, a device name, a command option or a formula in
 Excel is taken out.
 """
@@ -100,14 +101,23 @@ class Folder:
                 if f == fmt and r["trang_thai"] == FAILED]
 
     def target(self, title, song_id, fmt):
-        """A new file path for the song: its title, made unique in this folder."""
+        """A new file path for the song: its title, made unique in this folder. The name is not one another song
+        uses in any format, nor that of a lyrics file (Title.txt) that is not the song's own."""
         stem = safe_filename(title, f"suno-{song_id[:8]}")
-        taken = {p.name.lower() for p in self.root.iterdir()}
-        taken |= {(r.get("file") or "").lower() for r in self.rows.values() if r.get("file")}
-        name, n = f"{stem}.{fmt}", 2
-        while name.lower() in taken:
-            name, n = f"{stem} ({n}).{fmt}", n + 1
-        return self.root / name
+        mine = {Path(r["file"]).stem.lower() for (sid, _), r in self.rows.items() if sid == song_id and r.get("file")}
+        names = {p.name.lower() for p in self.root.iterdir()}
+        taken = {Path(r["file"]).stem.lower() for (sid, _), r in self.rows.items() if sid != song_id and r.get("file")}
+        taken |= {Path(r["file"]).name.lower() for r in self.rows.values() if r.get("file")}
+
+        def free(s):
+            s = s.lower()
+            return (s not in taken and f"{s}.{fmt}" not in names and f"{s}.{fmt}" not in taken
+                    and (s in mine or f"{s}.txt" not in names))
+
+        name, n = stem, 2
+        while not free(name):
+            name, n = f"{stem} ({n})", n + 1
+        return self.root / f"{name}.{fmt}"
 
     def part_path(self, song_id, fmt):
         return self.root / f".{song_id}.{fmt}.part"

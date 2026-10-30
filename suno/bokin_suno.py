@@ -12,11 +12,13 @@ plan's download allowance exactly as by hand; the run stops when Suno says it is
   download <tai-khoan> <link>... [--out FOLDER] [--format wav|mp3] [--limit N] [--full]
                                every song at the links not yet in FOLDER/danh-sach.csv, and the ones that failed
                                before; a second run reads a workspace's list only until it meets songs already
-                               downloaded (--full: the whole list)
+                               downloaded (--full: the whole list). The lyrics a song's page shows are kept next to
+                               its file (Title.txt)
   selftest                     checks that need no browser
 
 Data (accounts.json, a Chrome profile per account, logs) is in ./data next to the program, or in --data /
-BOKIN_SUNO_DATA. The profiles hold the accounts' Suno sign-ins: never copy or share them.
+BOKIN_SUNO_DATA. The profiles hold the accounts' Suno sign-ins: never copy or share them. BOKIN_SUNO_STOP names a
+file: once it exists, a download stops before its next song (Bokin Suno Studio's Stop button).
 """
 import argparse
 import contextlib
@@ -350,12 +352,13 @@ def check_space(root, count, fmt):
 
 
 def download_one(page, catcher, song, fmt, out, label):
-    """One song into the folder; a second try after a failure Suno's page may not repeat. Returns the file's path."""
+    """One song into the folder, its lyrics (if its page shows them) next to it in Title.txt; a second try after a
+    failure Suno's page may not repeat. Returns the file's path."""
     part = out.part_path(song.id, fmt)
     try:
         for attempt in (1, 2):
             try:
-                title = web.download_song(page, catcher, song, fmt, part, log)
+                title, lyrics = web.download_song(page, catcher, song, fmt, part, log)
                 if not folder.audio_ok(part, fmt):
                     raise web.SunoError("stuck", f"File nhận được không phải {fmt.upper()}")
                 break
@@ -367,11 +370,24 @@ def download_one(page, catcher, song, fmt, out, label):
                 page.wait_for_timeout(3000)
         path = out.target(title, song.id, fmt)
         part.replace(path)
+        if lyrics:
+            try:
+                path.with_suffix(".txt").write_text(lyrics.replace("\r\n", "\n") + "\n", encoding="utf-8")
+            except OSError as e:
+                if disk_full(e):
+                    raise
+                log.warning("%s: không ghi được lời bài hát: %s", label, e)
         out.add(song, path, fmt, title)
         return path
     finally:
         with contextlib.suppress(OSError):
             part.unlink()
+
+
+def stop_asked():
+    """Bokin Suno Studio's Stop button: BOKIN_SUNO_STOP names a file that appears when it is pressed."""
+    flag = os.environ.get("BOKIN_SUNO_STOP")
+    return bool(flag) and os.path.exists(flag)
 
 
 def cmd_download(args, data):
@@ -406,6 +422,9 @@ def cmd_download(args, data):
         stuck = 0
         loop_started = time.monotonic()
         for n, song in enumerate(todo, 1):
+            if stop_asked():
+                stopped = "Đã dừng theo yêu cầu. Chạy lại để tải tiếp các bài còn thiếu"
+                break
             label = f"[{n}/{len(todo)}] {song.title or song.id}"
             try:
                 path = download_one(page, catcher, song, fmt, out, label)
@@ -506,6 +525,11 @@ def cmd_selftest(args, data):
         out.add(song, p1, "wav", song.title)
         p2 = out.target(song.title, "11111111-2222-3333-4444-555555555555", "wav")
         check(p1.name == "Mưa đêm.wav" and p2.name == "Mưa đêm (2).wav", f"unique names {p1.name} {p2.name}")
+        p3 = out.target(song.title, "11111111-2222-3333-4444-555555555555", "mp3")
+        check(p3.name == "Mưa đêm (2).mp3", f"a name belongs to one song in every format {p3.name}")
+        check(out.target(song.title, sid, "mp3").name == "Mưa đêm.mp3", "the song's own name in another format")
+        (tmp / "nhac" / "Riêng.txt").write_text("x", encoding="utf-8")
+        check(out.target("Riêng", sid, "wav").name == "Riêng (2).wav", "a lyrics file that is not the song's own")
         again = folder.Folder(tmp / "nhac")
         check(again.done(sid, "wav") and not again.done(sid, "mp3"), "the list read back")
         raw = again.list_path.read_text(encoding="utf-8-sig")

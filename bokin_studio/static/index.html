@@ -1,0 +1,485 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bokin Suno Studio</title>
+<style>
+:root {
+  --bg: #f6f5f2; --panel: #ffffff; --text: #1d1d1f; --muted: #6b6b70; --line: #e3e1dc;
+  --accent: #3b5bdb; --accent-text: #ffffff; --ok: #2b8a3e; --warn: #b26a00; --bad: #c92a2a;
+  --soft: #eef1fb; --code: #f1f0ec;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #141416; --panel: #1d1d21; --text: #ececf0; --muted: #9a9aa3; --line: #2e2e35;
+    --accent: #7b93ff; --accent-text: #0d0d10; --ok: #69db7c; --warn: #ffc078; --bad: #ff8787;
+    --soft: #22263a; --code: #26262c;
+  }
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--text); display: flex; flex-direction: column;
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 10px 20px; background: var(--panel); border-bottom: 1px solid var(--line); }
+header h1 { font-size: 18px; margin: 0; letter-spacing: .2px; }
+.spacer { flex: 1; }
+.badge { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--soft); color: var(--muted); }
+.update { cursor: pointer; border: 0; font: inherit; }
+.update.ready { background: var(--accent); color: var(--accent-text); padding: 4px 10px; font-weight: 600; }
+.update.warn { color: var(--warn); }
+nav { display: flex; gap: 4px; padding: 0 20px; background: var(--panel); border-bottom: 1px solid var(--line);
+  overflow-x: auto; }
+nav button { font: inherit; background: none; border: 0; border-bottom: 3px solid transparent; color: var(--muted);
+  padding: 10px 14px; cursor: pointer; white-space: nowrap; }
+nav button[aria-selected=true] { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+.view { flex: 1; min-height: 0; overflow: auto; }
+.view.frame { display: flex; flex-direction: column; overflow: hidden; }
+main { max-width: 1000px; margin: 0 auto; padding: 20px 16px 60px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px; margin-bottom: 16px; }
+.card h2 { font-size: 16px; margin: 0 0 12px; }
+label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 10px; }
+label > input, label > select, label > textarea { display: block; margin-top: 4px; width: 100%; }
+input, select, textarea { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line);
+  border-radius: 8px; padding: 7px 10px; }
+textarea { min-height: 70px; resize: vertical; font-family: ui-monospace, Consolas, monospace; font-size: 13px; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.row > .grow { flex: 1; min-width: 200px; }
+button { font: inherit; border: 1px solid transparent; border-radius: 8px; padding: 7px 14px; cursor: pointer; }
+button:disabled { opacity: .5; cursor: default; }
+button.primary { background: var(--accent); color: var(--accent-text); }
+button.secondary { background: var(--panel); color: var(--text); border-color: var(--line); }
+button.danger { background: none; color: var(--bad); border-color: var(--bad); }
+button.small { padding: 3px 10px; font-size: 13px; }
+.check { display: flex; align-items: center; gap: 6px; color: var(--text); font-size: 14px; margin: 0; }
+.check input { width: auto; margin: 0; }
+.hint { font-size: 13px; color: var(--muted); }
+.notice { padding: 10px 12px; border-radius: 8px; background: var(--soft); font-size: 14px; margin: 10px 0; }
+.notice.warn { color: var(--warn); }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+th { color: var(--muted); font-weight: 500; }
+td.actions { white-space: nowrap; text-align: right; }
+.bar { height: 8px; border-radius: 99px; background: var(--soft); overflow: hidden; margin: 8px 0; }
+.bar > div { height: 100%; width: 0; background: var(--accent); transition: width .3s; }
+.log { background: var(--code); border-radius: 8px; padding: 8px 10px; font: 12.5px/1.45 ui-monospace, Consolas, monospace;
+  max-height: 260px; overflow: auto; white-space: pre-wrap; word-break: break-word; margin: 0; }
+.state-running { color: var(--accent); } .state-done { color: var(--ok); } .state-failed { color: var(--bad); }
+.state-stopped { color: var(--warn); }
+.lyrics { background: var(--code); border-radius: 8px; padding: 10px 12px; white-space: pre-wrap; margin: 8px 0 0;
+  max-height: 320px; overflow: auto; font-size: 14px; }
+.machine { font: 600 18px ui-monospace, Consolas, monospace; letter-spacing: 1px; }
+iframe { flex: 1; width: 100%; border: 0; background: var(--bg); }
+.framebar { display: flex; gap: 8px; align-items: center; padding: 8px 20px; border-bottom: 1px solid var(--line);
+  background: var(--panel); font-size: 14px; flex-wrap: wrap; }
+#toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); max-width: 90vw;
+  background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 8px; display: none; z-index: 9; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Bokin Suno Studio</h1>
+  <span class="badge" id="version">…</span>
+  <button class="badge update" id="update" hidden></button>
+  <span class="spacer"></span>
+  <button class="secondary small" id="quit">Tắt app</button>
+</header>
+
+<div class="view" id="licenceView" hidden>
+<main>
+<div class="card" id="licence">
+  <h2>Kích hoạt Bokin Suno Studio</h2>
+  <div class="hint" id="licenceWhy"></div>
+  <ol>
+    <li>Gửi <b>Mã máy</b> dưới đây cho người bán (bấm "Chép mã máy").</li>
+    <li>Dán <b>key</b> nhận được vào ô bên dưới rồi bấm <b>Kích hoạt</b>.</li>
+  </ol>
+  <div class="row"><span class="machine" id="machine">…</span>
+    <button class="secondary small" id="copyMachine">Chép mã máy</button></div>
+  <label style="margin-top:12px">Key<textarea id="licenceKey" placeholder="BOKIN-…" spellcheck="false"></textarea></label>
+  <div class="row"><button class="primary" id="activate">Kích hoạt</button>
+    <span class="hint">Một key cho nhiều app Bokin: kích hoạt ở một app là các app khác trong gói cũng mở.</span></div>
+</div>
+</main>
+</div>
+
+<nav id="tabs" role="tablist" hidden>
+  <button role="tab" data-view="accounts" aria-selected="false">1. Tài khoản Suno</button>
+  <button role="tab" data-view="download" aria-selected="true">2. Tải nhạc</button>
+  <button role="tab" data-view="lyrics" aria-selected="false">3. Đổi lời</button>
+  <button role="tab" data-view="master" aria-selected="false">4. Master</button>
+</nav>
+
+<!-- 1. Suno accounts -->
+<div class="view" id="view-accounts" hidden>
+<main>
+  <div class="notice warn" id="noChrome" hidden>Máy này chưa có <b>Google Chrome</b>. Phần tải nhạc cần Chrome:
+    cài Chrome từ <b>google.com/chrome</b>, rồi mở lại app.</div>
+  <div class="card">
+    <h2>Tài khoản Suno trên máy này</h2>
+    <table><thead><tr><th>Tên</th><th>Thêm lúc</th><th></th></tr></thead><tbody id="accounts"></tbody></table>
+    <p class="hint" id="noAccounts">Chưa có tài khoản nào. Thêm một tài khoản ở dưới.</p>
+    <div class="row" style="margin-top:8px"><button class="secondary small" id="checkAll">Kiểm tra đăng nhập</button></div>
+  </div>
+  <div class="card">
+    <h2>Thêm tài khoản (đăng nhập Suno một lần)</h2>
+    <ol class="hint">
+      <li>Đặt cho tài khoản một <b>tên ngắn</b>: chữ không dấu, số, - hoặc _. Ví dụ <b>suno1</b>.</li>
+      <li>Bấm <b>Đăng nhập</b>: một cửa sổ Chrome mở trang suno.com. Bấm <b>Sign In</b>, đăng nhập như mọi khi.</li>
+      <li>Khi đã vào Suno (thấy ảnh đại diện), <b>đóng cửa sổ Chrome đó</b>. App báo đã lưu tài khoản.</li>
+    </ol>
+    <div class="row"><input id="newAccount" placeholder="suno1" maxlength="40" autocomplete="off" spellcheck="false">
+      <button class="primary" id="login">Đăng nhập</button></div>
+    <p class="hint">App không lưu mật khẩu. Phiên đăng nhập nằm trong hồ sơ Chrome riêng của tài khoản, trên máy này.
+      Khi chụp màn hình gửi người khác, nhớ che tên tài khoản và email.</p>
+  </div>
+  <div class="card" id="accountTask" hidden></div>
+</main>
+</div>
+
+<!-- 2. Download -->
+<div class="view" id="view-download">
+<main>
+  <div class="card">
+    <h2>Tải bài từ một workspace Suno</h2>
+    <div class="row">
+      <label class="grow">Tài khoản Suno<select id="account"></select></label>
+      <label>Định dạng<select id="format"><option value="wav">WAV (nên dùng)</option><option value="mp3">MP3</option></select></label>
+      <label>Tối đa (bài)<input id="limit" type="number" min="1" placeholder="tất cả" style="width:110px"></label>
+    </div>
+    <label>Link workspace, playlist hoặc bài (mỗi link một dòng)
+      <textarea id="links" placeholder="https://suno.com/create?wid=..." spellcheck="false"></textarea></label>
+    <label>Thư mục lưu nhạc
+      <span class="row" style="margin-top:4px"><input id="folder" class="grow" spellcheck="false">
+      <button class="secondary small" id="pickFolder" hidden>Chọn…</button>
+      <button class="secondary small" id="openFolder" hidden>Mở thư mục</button></span></label>
+    <label class="check"><input type="checkbox" id="full"> Đọc hết danh sách (khi chuyển bài cũ vào workspace)</label>
+    <div class="row" style="margin-top:12px">
+      <button class="secondary" id="listSongs">Xem danh sách bài</button>
+      <button class="primary" id="download">Tải về</button>
+    </div>
+    <p class="hint">App tải qua đúng nút <b>Download</b> của Suno: mỗi bài tính một lượt tải của gói như khi tải bằng
+      tay. Hết lượt thì app dừng, không bao giờ bấm mua thêm. Chạy lại thì chỉ tải bài mới. Lần đầu nên tải thử 2 bài
+      (ô <b>Tối đa</b>).</p>
+  </div>
+
+  <div class="card" id="task" hidden>
+    <div class="row"><h2 id="taskLabel" style="margin:0" class="grow"></h2><span id="taskState"></span>
+      <button class="danger small" id="stop">Dừng</button></div>
+    <div class="bar" id="taskBar" hidden><div></div></div>
+    <div class="hint" id="taskCount"></div>
+    <table id="listed" hidden><thead><tr><th>#</th><th>Bài trên Suno</th></tr></thead><tbody></tbody></table>
+    <pre class="log" id="taskLog"></pre>
+  </div>
+
+  <div class="card">
+    <div class="row"><h2 class="grow" style="margin:0">Bài đã tải trong thư mục này</h2>
+      <label style="margin:0">Kiểu master<select id="preset"></select></label>
+      <button class="secondary small" id="refreshLibrary">Làm mới</button></div>
+    <p class="hint" id="libraryEmpty">Chưa có bài nào. Tải nhạc ở trên, bài sẽ hiện ở đây.</p>
+    <table id="library" hidden><thead><tr><th>Bài</th><th>Dạng</th><th>Tải lúc</th><th></th></tr></thead>
+      <tbody></tbody></table>
+    <audio id="player" controls hidden style="width:100%;margin-top:10px"></audio>
+    <div id="lyricsBox" hidden>
+      <div class="row" style="margin-top:12px"><b class="grow" id="lyricsTitle"></b>
+        <button class="secondary small" id="copyLyrics">Chép lời gốc</button>
+        <button class="primary small" id="respell">Đổi lời bài này</button></div>
+      <pre class="lyrics" id="lyricsText"></pre>
+    </div>
+  </div>
+</main>
+</div>
+
+<!-- 3. Lời Đồng Âm -->
+<div class="view frame" id="view-lyrics" hidden>
+  <div class="framebar"><span id="lyricsFrom" class="hint">Dán lời tiếng Anh vào ô Lời gốc, hoặc chọn
+    <b>Đổi lời</b> ở một bài trong thẻ Tải nhạc.</span><span class="spacer"></span>
+    <span class="hint">Chỉ dùng cho bài đã hết bản quyền (Public Domain) hoặc lời do chính bạn viết.</span></div>
+  <iframe id="lyricsFrame" title="Lời Đồng Âm" data-src="/loi-dong-am/index.html"></iframe>
+</div>
+
+<!-- 4. Master -->
+<div class="view frame" id="view-master" hidden>
+  <div class="framebar"><span class="hint">Master bài hát Suno (Bokin Suno Master). Bài đã tải gửi sang đây bằng nút
+    <b>Master</b> trong thẻ Tải nhạc.</span><span class="spacer"></span>
+    <button class="secondary small" id="openMaster" hidden>Mở thư mục Master</button></div>
+  <iframe id="masterFrame" title="Master" data-src="/master"></iframe>
+</div>
+
+<div id="toast"></div>
+<script>
+// Everything shown here that comes from Suno or from files (titles, lyrics, log lines) goes in as text
+// (textContent), never as HTML: song titles and lyrics are not trusted.
+const TOKEN = "__BOKIN_TOKEN__";
+const PRESET_TEXT = { streaming: "Nghe trực tuyến", loud: "To", gentle: "Nhẹ nhàng", clean_only: "Chỉ làm sạch",
+  bossa: "Bossa nova", jazz: "Jazz", dark_piano: "Dark piano", classical_christmas: "Giáng sinh cổ điển" };
+const STATES = { running: "Đang chạy", done: "Xong", failed: "Có lỗi", stopped: "Đã dừng" };
+const $ = (id) => document.getElementById(id);
+let info = {}, settings = {}, lastTask = null, lines = 0, songs = [], current = null;
+
+function toast(text) {
+  const t = $("toast"); t.textContent = text; t.style.display = "block";
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => (t.style.display = "none"), 4500);
+}
+async function api(path, opts = {}) {
+  opts.headers = { ...(opts.headers || {}), "X-Bokin-Token": TOKEN };
+  if (opts.json !== undefined) {
+    opts.method = opts.method || "POST"; opts.body = JSON.stringify(opts.json);
+    opts.headers["Content-Type"] = "application/json"; delete opts.json;
+  }
+  const res = await fetch(path, opts);
+  const body = await res.json().catch(() => ({}));
+  if (res.status === 403 && body.license) { showLicence(); throw new Error(body.detail); }
+  if (!res.ok) throw new Error(body.detail || res.statusText);
+  return body;
+}
+function el(tag, text, cls) { const e = document.createElement(tag); if (text != null) e.textContent = text; if (cls) e.className = cls; return e; }
+function button(text, cls, onclick) { const b = el("button", text, cls); b.type = "button"; b.onclick = onclick; return b; }
+const q = (o) => new URLSearchParams(o).toString();
+
+// ---- licence ----
+async function showLicence() {
+  let lic = {};
+  try { lic = await api("/api/license"); } catch (e) {}
+  if (lic.licensed) return true;
+  for (const v of document.querySelectorAll(".view")) v.hidden = true;
+  $("tabs").hidden = true; $("licenceView").hidden = false;
+  $("machine").textContent = lic.machine || "…";
+  $("licenceWhy").textContent = lic.message || "";
+  return false;
+}
+async function activate() {
+  const key = $("licenceKey").value.trim();
+  if (!key) return toast("Hãy dán key nhận được từ người bán.");
+  try {
+    const lic = await api("/api/license", { json: { key } });
+    if (lic.licensed) { toast("Đã kích hoạt. Cảm ơn bạn!"); location.reload(); }
+  } catch (err) { toast(err.message); }
+}
+
+// ---- updates ----
+let updateState = null;
+function renderUpdate(u) {
+  updateState = u;
+  const b = $("update"); b.className = "badge update";
+  if (u.ready) { b.textContent = `Có bản mới ${u.available} · Cập nhật ngay`; b.classList.add("ready"); b.hidden = false; }
+  else if (u.downloading) { b.textContent = `Đang tải bản ${u.downloading}…`; b.hidden = false; }
+  else if (u.auto && u.error && u.reason !== "offline") { b.textContent = "Chưa kiểm tra được bản mới"; b.classList.add("warn"); b.hidden = false; }
+  else b.hidden = true;
+}
+async function pollUpdate() { try { renderUpdate(await api("/api/update")); } catch (e) {} }
+async function onUpdateClick() {
+  const u = updateState || {};
+  if (!u.ready) {
+    try { renderUpdate(await api("/api/update/check", { json: {} })); toast("Đang kiểm tra bản mới…"); } catch (e) { toast(e.message); }
+    return;
+  }
+  try {
+    const old = info.version;
+    await api("/api/update/install", { json: {} });
+    toast("Đang cài bản mới, app sẽ tự mở lại…");
+    const wait = setInterval(async () => {
+      try { const p = await (await fetch("/api/ping")).json(); if (p.version && p.version !== old) { clearInterval(wait); location.reload(); } } catch (e) {}
+    }, 2000);
+  } catch (err) { toast(err.message); }
+}
+
+// ---- tabs ----
+function show(view) {
+  for (const b of document.querySelectorAll("nav button")) b.setAttribute("aria-selected", String(b.dataset.view === view));
+  for (const v of document.querySelectorAll(".view")) v.hidden = v.id !== "view-" + view;
+  const frame = { lyrics: $("lyricsFrame"), master: $("masterFrame") }[view];
+  if (frame && !frame.src) frame.src = frame.dataset.src + (view === "master" ? "?t=" + encodeURIComponent(TOKEN) : "");
+  if (view === "download") refreshLibrary();
+}
+
+// ---- Suno accounts ----
+function renderAccounts(list) {
+  const tbody = $("accounts"); tbody.replaceChildren();
+  for (const a of list) {
+    const tr = el("tr"); tr.append(el("td", a.name), el("td", a.added));
+    const td = el("td", null, "actions");
+    td.append(button("Kiểm tra", "secondary small", () => runTask("/api/suno/check", { account: a.name })),
+      button("Đăng nhập lại", "secondary small", () => runTask("/api/suno/login", { account: a.name })),
+      button("Xoá", "danger small", () => {
+        if (confirm(`Xoá tài khoản ${a.name} và hồ sơ Chrome của nó khỏi máy này?`)) runTask("/api/suno/remove", { account: a.name });
+      }));
+    tr.append(td); tbody.append(tr);
+  }
+  $("noAccounts").hidden = list.length > 0;
+  const sel = $("account"), was = sel.value || settings.account;
+  sel.replaceChildren(...list.map((a) => { const o = el("option", a.name); o.value = a.name; return o; }));
+  if (!list.length) { const o = el("option", "(chưa có, thêm ở thẻ Tài khoản)"); o.value = ""; sel.append(o); }
+  if (list.some((a) => a.name === was)) sel.value = was;
+}
+
+// ---- tasks (the Suno side) ----
+async function runTask(path, body) {
+  try {
+    const task = await api(path, { json: body });
+    lastTask = null; lines = 0; startTask(task);
+  } catch (err) { toast(err.message); }
+}
+function startTask(task) {
+  $("task").hidden = false; $("taskLog").textContent = ""; $("listed").hidden = true;
+  if (["login", "check", "remove"].includes(task.kind)) {
+    $("accountTask").hidden = false; $("accountTask").replaceChildren(el("b", task.label), el("pre", "", "log"));
+  }
+  renderTask({ ...task, lines: [] }); wasRunning = true;
+  poll();
+}
+function renderTask(t) {
+  const fresh = !lastTask || lastTask.id !== t.id;
+  if (fresh) { $("taskLog").textContent = ""; lines = 0; }
+  lastTask = t;
+  $("task").hidden = false; $("task").dataset.task = t.id;
+  $("taskLabel").textContent = t.label;
+  $("taskState").textContent = t.stopping && t.state === "running" ? "Đang dừng…" : STATES[t.state] || t.state;
+  $("taskState").className = "state-" + t.state;
+  $("stop").hidden = t.state !== "running";
+  const log = $("taskLog");
+  const atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 8;
+  if (t.lines.length) { log.textContent += (log.textContent ? "\n" : "") + t.lines.join("\n"); }
+  lines = t.line_count;
+  if (atEnd) log.scrollTop = log.scrollHeight;
+  const bar = $("taskBar");
+  bar.hidden = !(t.kind === "download" && t.total);
+  bar.firstElementChild.style.width = t.total ? `${Math.round(100 * t.done / t.total)}%` : "0";
+  $("taskCount").textContent = t.kind === "download" && t.total ? `Bài ${t.done}/${t.total}` : "";
+  const acc = $("accountTask").querySelector("pre");
+  if (acc && ["login", "check", "remove"].includes(t.kind)) {
+    acc.textContent = log.textContent;
+    if (t.kind === "login" && t.state === "running") acc.textContent += "\n… Đang chờ: đăng nhập trong cửa sổ Chrome, rồi đóng cửa sổ đó.";
+  }
+  if (t.kind === "list" && t.state !== "running") {
+    const tbody = $("listed").querySelector("tbody"); tbody.replaceChildren();
+    for (const s of t.songs) { const tr = el("tr"); tr.append(el("td", String(s.n)), el("td", s.title || "(không tên)")); tbody.append(tr); }
+    $("listed").hidden = !t.songs.length;
+  }
+}
+let pollTimer = null, wasRunning = false;
+async function poll() {
+  clearTimeout(pollTimer);
+  let running = false;
+  try {
+    const s = await api("/api/suno?" + q({ since: lastTask ? lines : 0 }));
+    $("noChrome").hidden = s.chrome;
+    renderAccounts(s.accounts);
+    if (s.task) { renderTask(s.task); running = s.task.state === "running"; }
+    if (wasRunning && !running) { refreshLibrary(); if (s.task) toast(`${s.task.label}: ${STATES[s.task.state] || s.task.state}`); }
+    wasRunning = running;
+  } catch (e) {}
+  pollTimer = setTimeout(poll, running ? 1000 : 5000);
+}
+
+function downloadBody() {
+  return { account: $("account").value, links: $("links").value, folder: $("folder").value.trim(),
+    format: $("format").value, limit: $("limit").value || null, full: $("full").checked };
+}
+async function saveSettings() {
+  try { settings = await api("/api/settings", { json: { account: $("account").value, links: $("links").value,
+    folder: $("folder").value.trim(), format: $("format").value, preset: $("preset").value } }); } catch (e) {}
+}
+
+// ---- the downloaded songs ----
+async function refreshLibrary() {
+  let r;
+  try { r = await api("/api/library?" + q({ folder: $("folder").value.trim() })); } catch (err) { return toast(err.message); }
+  songs = r.songs;
+  const tbody = $("library").querySelector("tbody"); tbody.replaceChildren();
+  for (const s of songs) {
+    const tr = el("tr");
+    tr.append(el("td", s.title), el("td", (s.format || "").toUpperCase()), el("td", s.at));
+    const td = el("td", null, "actions");
+    td.append(button("Nghe", "secondary small", () => play(s)));
+    const lyr = button("Lời", "secondary small", () => openLyrics(s, false));
+    lyr.disabled = !s.lyrics; lyr.title = s.lyrics ? "" : "Suno không hiện lời cho bài này";
+    const resp = button("Đổi lời", "secondary small", () => openLyrics(s, true)); resp.disabled = !s.lyrics;
+    td.append(lyr, resp, button("Master", "primary small", () => sendToMaster(s)));
+    tr.append(td); tbody.append(tr);
+  }
+  $("library").hidden = !songs.length; $("libraryEmpty").hidden = !!songs.length;
+}
+function songQuery(s) { return q({ folder: $("folder").value.trim(), file: s.file }); }
+function play(s) {
+  const p = $("player"); p.hidden = false;
+  p.src = "/api/library/audio?" + songQuery(s) + "&t=" + encodeURIComponent(TOKEN); p.play().catch(() => {});
+}
+async function openLyrics(s, respell) {
+  let r;
+  try { r = await api("/api/library/lyrics?" + songQuery(s)); } catch (err) { return toast(err.message); }
+  current = { song: s, lyrics: r.lyrics };
+  $("lyricsBox").hidden = false; $("lyricsTitle").textContent = s.title; $("lyricsText").textContent = r.lyrics;
+  if (respell) respellCurrent();
+}
+function respellCurrent() {
+  if (!current) return;
+  show("lyrics");
+  $("lyricsFrom").textContent = "Đang đổi lời bài: " + current.song.title;
+  const frame = $("lyricsFrame");
+  const put = () => {
+    const doc = frame.contentDocument, src = doc && doc.getElementById("src");
+    if (!src) return false;
+    src.value = current.lyrics; src.dispatchEvent(new Event("input", { bubbles: true }));
+    return true;
+  };
+  if (!put()) frame.addEventListener("load", () => put(), { once: true });
+}
+async function sendToMaster(s) {
+  try {
+    await api("/api/library/master", { json: { folder: $("folder").value.trim(), file: s.file, preset: $("preset").value } });
+    toast(`Đã gửi "${s.title}" sang Master (${PRESET_TEXT[$("preset").value] || $("preset").value}).`);
+    saveSettings();
+    const frame = $("masterFrame");
+    if (frame.src && frame.contentWindow && frame.contentWindow.refresh) frame.contentWindow.refresh();
+  } catch (err) { toast(err.message); }
+}
+
+async function init() {
+  info = await api("/api/info");
+  $("version").textContent = info.version === "dev" ? "bản phát triển" : "v" + info.version;
+  $("activate").onclick = activate;
+  $("copyMachine").onclick = () => navigator.clipboard.writeText($("machine").textContent)
+    .then(() => toast("Đã chép mã máy."), () => toast("Hãy bôi đen mã máy rồi bấm Ctrl+C."));
+  $("update").onclick = onUpdateClick;
+  $("quit").onclick = async () => {
+    if (!confirm("Tắt app? Việc đang chạy (tải nhạc, master) sẽ bị dừng.")) return;
+    try { await api("/api/shutdown", { method: "POST" }); } catch (e) {}
+    document.body.replaceChildren(el("main", "Đã tắt app. Bạn có thể đóng cửa sổ này."));
+  };
+  pollUpdate(); setInterval(pollUpdate, 60000);
+  if (!(await showLicence())) return;
+  $("tabs").hidden = false;
+  for (const b of document.querySelectorAll("nav button")) b.onclick = () => show(b.dataset.view);
+  settings = await api("/api/settings");
+  $("folder").value = settings.folder || info.music_dir;
+  $("links").value = settings.links || "";
+  if (settings.format) $("format").value = settings.format;
+  $("preset").replaceChildren(...Object.keys(info.presets).map((k) => { const o = el("option", PRESET_TEXT[k] || k); o.value = k; return o; }));
+  if (settings.preset && info.presets[settings.preset]) $("preset").value = settings.preset;
+  $("pickFolder").hidden = !info.pick_folder; $("openFolder").hidden = !info.desktop; $("openMaster").hidden = !info.desktop;
+  $("pickFolder").onclick = async () => {
+    try { const r = await api("/api/pick-folder", { json: { start: $("folder").value } }); if (r.folder) { $("folder").value = r.folder; saveSettings(); refreshLibrary(); } }
+    catch (err) { toast(err.message); }
+  };
+  $("openFolder").onclick = () => api("/api/open", { json: { folder: $("folder").value.trim() } }).catch((err) => toast(err.message));
+  $("openMaster").onclick = () => api("/api/open", { json: {} }).catch((err) => toast(err.message));
+  $("folder").onchange = () => { saveSettings(); refreshLibrary(); };
+  $("refreshLibrary").onclick = refreshLibrary;
+  $("login").onclick = () => runTask("/api/suno/login", { account: $("newAccount").value.trim() });
+  $("checkAll").onclick = () => runTask("/api/suno/check", {});
+  $("listSongs").onclick = () => { saveSettings(); runTask("/api/suno/list", downloadBody()); };
+  $("download").onclick = () => { saveSettings(); runTask("/api/suno/download", downloadBody()); };
+  $("stop").onclick = () => api("/api/suno/stop", { json: {} }).then(poll).catch((err) => toast(err.message));
+  $("copyLyrics").onclick = () => current && navigator.clipboard.writeText(current.lyrics)
+    .then(() => toast("Đã chép lời gốc."), () => toast("Không chép được: bôi đen rồi bấm Ctrl+C."));
+  $("respell").onclick = respellCurrent;
+  await poll();
+  show(settings.account || $("account").value ? "download" : "accounts");
+}
+init().catch((err) => toast(err.message));
+</script>
+</body>
+</html>

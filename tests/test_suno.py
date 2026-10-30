@@ -2,12 +2,15 @@
 
 Runs the program as a person would (python suno/bokin_suno.py ...): sign in, check, a workspace whose list loads as
 it scrolls, a few songs first (--limit), then the rest with a song still being made and a song page that fails once,
-a second run that reads only the top of the list yet tries the unfinished song again, MP3 through a "uses 1
-download" box opening in a new tab, several links at once (one of them bad), a Load more button, the plan's
-downloads used up (nothing bought), a changed Suno page, the wrong account, a sign-out, removing the account.
+a second run that reads only the top of the list yet tries the unfinished song again, the lyrics kept next to each
+song (none for an instrumental), MP3 through a "uses 1 download" box opening in a new tab, several links at once (one
+of them bad), a Load more button, the Stop button of Bokin Suno Studio, the plan's downloads used up (nothing
+bought), a changed Suno page, the wrong account, a sign-out, removing the account.
 
   python tests/test_suno.py [--headless] [--chrome PATH] [--keep]
 On Linux without a screen: xvfb-run -a python tests/test_suno.py
+BOKIN_SUNO_CMD (a JSON list) runs another program instead, e.g. the installed Bokin Suno Studio:
+  ["C:/.../BokinSunoStudio.exe", "suno"]
 """
 import argparse
 import csv
@@ -22,7 +25,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from fake_suno import USER_ID, WORKSPACE, FakeSuno, audio_bytes  # noqa: E402
+from fake_suno import USER_ID, WORKSPACE, FakeSuno, audio_bytes, default_lyrics  # noqa: E402
 
 PROG = HERE.parent / "suno" / "bokin_suno.py"
 failures = []
@@ -50,7 +53,7 @@ def main():
     fake = FakeSuno()
     titles = ["Mưa đêm", "Mưa đêm", "../../thoát ra", "CON", '=cmd|" /C calc"!A0', "<b>Đậm</b> & \"nháy\"",
               unicodedata.normalize("NFD", "Phố cũ")] + [f"Lofi số {n}" for n in range(1, 15)]
-    ids = [fake.add_song(t) for t in titles[:10]]
+    ids = [fake.add_song(t, lyrics="" if t == "CON" else None) for t in titles[:10]]  # CON: an instrumental
     making = fake.add_song("Đang tạo", status="streaming")  # in the middle of the list
     ids += [fake.add_song(t) for t in titles[10:]]
     fake.start()
@@ -59,7 +62,8 @@ def main():
     data = tmp / "data"
     env = dict(os.environ, BOKIN_SUNO_URL=fake.url, BOKIN_SUNO_DATA=str(data), BOKIN_SUNO_LOGIN_SETTLE="2",
                BOKIN_SUNO_KNOWN_STREAK="5", PYTHONIOENCODING="utf-8")
-    base = [sys.executable, str(PROG)]
+    base = json.loads(os.environ["BOKIN_SUNO_CMD"]) if os.environ.get("BOKIN_SUNO_CMD") else [sys.executable,
+                                                                                                str(PROG)]
     if opts.headless:
         base.append("--headless")
     if opts.chrome:
@@ -133,6 +137,15 @@ def main():
         check("'=cmd" in raw, "a title starting with = is not a formula in Excel")
         check(sorted(fake.counted) == sorted(ids), "Suno counted each downloaded song once")
         check(not list(nhac.glob("*.part")) and not list(nhac.glob(".*.part")), "no half-downloaded files left")
+        for sid in ids:
+            rec = by_id.get(sid, {})
+            lyrics = nhac / Path(rec.get("file", "x")).with_suffix(".txt").name
+            if fake.songs[sid]["lyrics"]:
+                check(lyrics.is_file() and lyrics.read_text(encoding="utf-8").strip() == fake.songs[sid]["lyrics"],
+                      f"{lyrics.name}: the song's lyrics")
+            else:
+                check(not lyrics.exists(), f"no lyrics file for the instrumental {rec.get('file')}")
+        check(default_lyrics("x").count("\n\n") == 1, "lyrics keep their blank line")
 
         print("== again, with the song finished and two new songs: only those three, reading only the top of the list")
         fake.songs[making]["status"] = "complete"
@@ -173,6 +186,16 @@ def main():
         out = cli("list", "suno1", link, contains=f"Có {len(fake.workspace)} bài")
         check(fake.stray not in out, "the player's song is not listed")
         fake.config["paging"] = "scroll"
+
+        print("== the Stop button of Bokin Suno Studio")
+        flag = tmp / "dung"
+        flag.write_text("", encoding="utf-8")
+        stop_later = fake.add_song("Chưa tải vì đã dừng")
+        env["BOKIN_SUNO_STOP"] = str(flag)
+        cli("download", "suno1", link, "--out", str(nhac), expect=1, contains="dừng theo yêu cầu")
+        del env["BOKIN_SUNO_STOP"]
+        check(stop_later not in {r["id"] for r in read_list(nhac)}, "nothing downloaded once stopped")
+        fake.workspace.remove(stop_later)
 
         print("== the plan's downloads used up")
         fake.config["downloads_left"] = 1
