@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Bokin Suno Studio</title>
+<link rel="icon" type="image/svg+xml" href="/logo.svg">
 <style>
 :root {
   --bg: #f6f5f2; --panel: #ffffff; --text: #1d1d1f; --muted: #6b6b70; --line: #e3e1dc;
@@ -24,7 +25,8 @@ body { margin: 0; background: var(--bg); color: var(--text); display: flex; flex
   font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
 header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
   padding: 10px 20px; background: var(--panel); border-bottom: 1px solid var(--line); }
-header h1 { font-size: 18px; margin: 0; letter-spacing: .2px; }
+header h1 { font-size: 18px; margin: 0; letter-spacing: .2px; display: flex; align-items: center; gap: 10px; }
+header h1 img { width: 30px; height: 30px; display: block; }
 .spacer { flex: 1; }
 .badge { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--soft); color: var(--muted); }
 .update { cursor: pointer; border: 0; font: inherit; }
@@ -80,12 +82,14 @@ iframe { flex: 1; width: 100%; border: 0; background: var(--bg); }
 </head>
 <body>
 <header>
-  <h1>Bokin Suno Studio</h1>
+  <h1><img src="/logo.svg" alt="">Bokin Suno Studio</h1>
   <span class="badge" id="version">…</span>
   <button class="badge update" id="update" hidden></button>
   <span class="spacer"></span>
   <button class="secondary small" id="quit">Tắt app</button>
 </header>
+<div class="notice warn" id="offline" hidden style="margin:0;border-radius:0">Không kết nối được với app: có thể app
+  đã tắt. Mở lại <b>Bokin Suno Studio</b> từ Desktop hoặc menu Start.</div>
 
 <div class="view" id="licenceView" hidden>
 <main>
@@ -150,7 +154,10 @@ iframe { flex: 1; width: 100%; border: 0; background: var(--bg); }
       <label>Tối đa (bài)<input id="limit" type="number" min="1" placeholder="tất cả" style="width:110px"></label>
     </div>
     <label>Link workspace, playlist hoặc bài (mỗi link một dòng)
-      <textarea id="links" placeholder="https://suno.com/create?wid=..." spellcheck="false"></textarea></label>
+      <textarea id="links" placeholder="https://suno.com/create?wid=..." spellcheck="false"></textarea>
+      <span class="hint" style="display:block;margin-top:4px">Tải cả workspace: mở workspace trên suno.com, chép link
+        trên <b>thanh địa chỉ</b> (dạng suno.com/create?wid=...). Link chia sẻ (suno.com/s/...) là link của
+        <b>một bài</b>: app chỉ tải đúng bài đó. Bài của người khác app luôn bỏ qua.</span></label>
     <label>Thư mục lưu nhạc
       <span class="row" style="margin-top:4px"><input id="folder" class="grow" spellcheck="false">
       <button class="secondary small" id="pickFolder" hidden>Chọn…</button>
@@ -194,15 +201,15 @@ iframe { flex: 1; width: 100%; border: 0; background: var(--bg); }
 
 <!-- 3. Lời Đồng Âm -->
 <div class="view frame" id="view-lyrics" hidden>
-  <div class="framebar"><span id="lyricsFrom" class="hint">Dán lời tiếng Anh vào ô Lời gốc, hoặc chọn
-    <b>Đổi lời</b> ở một bài trong thẻ Tải nhạc.</span><span class="spacer"></span>
-    <span class="hint">Chỉ dùng cho bài đã hết bản quyền (Public Domain) hoặc lời do chính bạn viết.</span></div>
+  <div class="framebar"><b>Đổi lời</b><span id="lyricsFrom" class="hint">Viết lại lời tiếng Anh theo cách đọc, hoặc
+    tách âm tiết bằng khoảng trống: Suno vẫn hát như cũ. Dán lời vào ô Lời gốc, hoặc chọn <b>Đổi lời</b> ở một bài
+    trong thẻ Tải nhạc.</span></div>
   <iframe id="lyricsFrame" title="Lời Đồng Âm" data-src="/loi-dong-am/index.html"></iframe>
 </div>
 
 <!-- 4. Master -->
 <div class="view frame" id="view-master" hidden>
-  <div class="framebar"><span class="hint">Master bài hát Suno (Bokin Suno Master). Bài đã tải gửi sang đây bằng nút
+  <div class="framebar"><b>Master</b><span class="hint">Làm sạch và master bài hát Suno (Bokin Suno Master). Bài đã tải gửi sang đây bằng nút
     <b>Master</b> trong thẻ Tải nhạc.</span><span class="spacer"></span>
     <button class="secondary small" id="openMaster" hidden>Mở thư mục Master</button></div>
   <iframe id="masterFrame" title="Master" data-src="/master"></iframe>
@@ -323,29 +330,40 @@ function renderAccounts(list) {
 async function runTask(path, body) {
   try {
     const task = await api(path, { json: body });
-    lastTask = null; lines = 0; startTask(task);
+    startTask(task);
   } catch (err) { toast(err.message); }
 }
 function startTask(task) {
-  $("task").hidden = false; $("taskLog").textContent = ""; $("listed").hidden = true;
+  $("task").hidden = false; $("listed").hidden = true; listedTask = null;
   if (["login", "check", "remove"].includes(task.kind)) {
-    $("accountTask").hidden = false; $("accountTask").replaceChildren(el("b", task.label), el("pre", "", "log"));
+    const stop = button("Dừng", "danger small", stopTask); stop.id = "accountStop";
+    $("accountTask").hidden = false;
+    $("accountTask").replaceChildren(el("div", null, "row"), el("pre", "", "log"));
+    $("accountTask").firstChild.append(el("b", task.label, "grow"), stop);
   }
-  renderTask({ ...task, lines: [] }); wasRunning = true;
+  renderTask(task); wasRunning = true;
   poll();
 }
+function stopTask() { api("/api/suno/stop", { json: {} }).then(poll).catch((err) => toast(err.message)); }
+const MAX_LOG = 3000;  // lines kept on the page
 function renderTask(t) {
   const fresh = !lastTask || lastTask.id !== t.id;
-  if (fresh) { $("taskLog").textContent = ""; lines = 0; }
+  const log = $("taskLog");
+  if (fresh) { log.textContent = ""; lines = 0; }
   lastTask = t;
   $("task").hidden = false; $("task").dataset.task = t.id;
   $("taskLabel").textContent = t.label;
-  $("taskState").textContent = t.stopping && t.state === "running" ? "Đang dừng…" : STATES[t.state] || t.state;
+  const stopping = t.kind === "download" ? "Đang dừng sau bài đang tải…" : "Đang dừng…";
+  $("taskState").textContent = t.stopping && t.state === "running" ? stopping : STATES[t.state] || t.state;
   $("taskState").className = "state-" + t.state;
   $("stop").hidden = t.state !== "running";
-  const log = $("taskLog");
   const atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 8;
-  if (t.lines.length) { log.textContent += (log.textContent ? "\n" : "") + t.lines.join("\n"); }
+  if (t.lines.length) {
+    let text = log.textContent + (log.textContent ? "\n" : "") + t.lines.join("\n");
+    const all = text.split("\n");
+    if (all.length > MAX_LOG) text = all.slice(-MAX_LOG).join("\n");
+    log.textContent = text;
+  }
   lines = t.line_count;
   if (atEnd) log.scrollTop = log.scrollHeight;
   const bar = $("taskBar");
@@ -356,25 +374,38 @@ function renderTask(t) {
   if (acc && ["login", "check", "remove"].includes(t.kind)) {
     acc.textContent = log.textContent;
     if (t.kind === "login" && t.state === "running") acc.textContent += "\n… Đang chờ: đăng nhập trong cửa sổ Chrome, rồi đóng cửa sổ đó.";
+    const s = $("accountStop"); if (s) s.hidden = t.state !== "running";
   }
-  if (t.kind === "list" && t.state !== "running") {
+  if (t.kind === "list" && t.state !== "running" && listedTask !== t.id && t.songs.length === t.song_count) {
+    listedTask = t.id;  // (drawn once: not sent again)
     const tbody = $("listed").querySelector("tbody"); tbody.replaceChildren();
     for (const s of t.songs) { const tr = el("tr"); tr.append(el("td", String(s.n)), el("td", s.title || "(không tên)")); tbody.append(tr); }
     $("listed").hidden = !t.songs.length;
   }
 }
-let pollTimer = null, wasRunning = false;
+// One request at a time: a call while one is out runs again right after it, so lines never come twice.
+let pollTimer = null, wasRunning = false, polling = false, pollAgain = false, listedTask = null, offline = 0;
 async function poll() {
-  clearTimeout(pollTimer);
+  if (polling) { pollAgain = true; return; }
+  polling = true; clearTimeout(pollTimer);
   let running = false;
   try {
-    const s = await api("/api/suno?" + q({ since: lastTask ? lines : 0 }));
+    const since = lastTask ? lines : 0, taskId = lastTask && lastTask.id;
+    const s = await api("/api/suno?" + q({ since, songs: listedTask && listedTask === taskId ? 0 : 1 }));
+    offline = 0; $("offline").hidden = true;
     $("noChrome").hidden = s.chrome;
     renderAccounts(s.accounts);
-    if (s.task) { renderTask(s.task); running = s.task.state === "running"; }
+    if (s.task) {
+      if (s.task.id === taskId && since !== lines) s.task.lines = [];  // (the page moved on meanwhile)
+      renderTask(s.task); running = s.task.state === "running";
+    }
     if (wasRunning && !running) { refreshLibrary(); if (s.task) toast(`${s.task.label}: ${STATES[s.task.state] || s.task.state}`); }
     wasRunning = running;
-  } catch (e) {}
+  } catch (e) {
+    if (++offline >= 3) $("offline").hidden = false;
+  }
+  polling = false;
+  if (pollAgain) { pollAgain = false; return poll(); }
   pollTimer = setTimeout(poll, running ? 1000 : 5000);
 }
 
@@ -391,7 +422,7 @@ async function saveSettings() {
 async function refreshLibrary() {
   let r;
   try { r = await api("/api/library?" + q({ folder: $("folder").value.trim() })); } catch (err) { return toast(err.message); }
-  songs = r.songs;
+  songs = r.songs; libraryFolder = r.folder;  // (the rows' buttons use the folder the list was read from)
   const tbody = $("library").querySelector("tbody"); tbody.replaceChildren();
   for (const s of songs) {
     const tr = el("tr");
@@ -406,9 +437,11 @@ async function refreshLibrary() {
   }
   $("library").hidden = !songs.length; $("libraryEmpty").hidden = !!songs.length;
 }
-function songQuery(s) { return q({ folder: $("folder").value.trim(), file: s.file }); }
+let libraryFolder = "";
+function songQuery(s) { return q({ folder: libraryFolder, file: s.file }); }
 function play(s) {
   const p = $("player"); p.hidden = false;
+  p.onerror = () => toast(`Không phát được "${s.title}": file đã bị xoá hoặc đổi tên? Bấm Làm mới.`);
   p.src = "/api/library/audio?" + songQuery(s) + "&t=" + encodeURIComponent(TOKEN); p.play().catch(() => {});
 }
 async function openLyrics(s, respell) {
@@ -433,7 +466,7 @@ function respellCurrent() {
 }
 async function sendToMaster(s) {
   try {
-    await api("/api/library/master", { json: { folder: $("folder").value.trim(), file: s.file, preset: $("preset").value } });
+    await api("/api/library/master", { json: { folder: libraryFolder, file: s.file, preset: $("preset").value } });
     toast(`Đã gửi "${s.title}" sang Master (${PRESET_TEXT[$("preset").value] || $("preset").value}).`);
     saveSettings();
     const frame = $("masterFrame");
@@ -471,15 +504,24 @@ async function init() {
     catch (err) { toast(err.message); }
     finally { b.disabled = false; }
   };
-  $("openFolder").onclick = () => api("/api/open", { json: { folder: $("folder").value.trim() } }).catch((err) => toast(err.message));
+  $("openFolder").onclick = () => api("/api/open", { json: { folder: $("folder").value.trim() } })
+    .catch((err) => toast(err.message));
   $("openMaster").onclick = () => api("/api/open", { json: {} }).catch((err) => toast(err.message));
   $("folder").onchange = () => { saveSettings(); refreshLibrary(); };
   $("refreshLibrary").onclick = refreshLibrary;
-  $("login").onclick = () => runTask("/api/suno/login", { account: $("newAccount").value.trim() });
+  $("login").onclick = () => {
+    const name = $("newAccount").value.trim();
+    if (!name) return toast("Gõ một tên ngắn cho tài khoản, ví dụ suno1.");
+    runTask("/api/suno/login", { account: name });
+  };
   $("checkAll").onclick = () => runTask("/api/suno/check", {});
-  $("listSongs").onclick = () => { saveSettings(); runTask("/api/suno/list", downloadBody()); };
-  $("download").onclick = () => { saveSettings(); runTask("/api/suno/download", downloadBody()); };
-  $("stop").onclick = () => api("/api/suno/stop", { json: {} }).then(poll).catch((err) => toast(err.message));
+  const needAccount = () => {
+    if ($("account").value) return true;
+    toast("Chưa có tài khoản Suno: thêm ở thẻ 1. Tài khoản Suno."); show("accounts"); return false;
+  };
+  $("listSongs").onclick = () => { if (!needAccount()) return; saveSettings(); runTask("/api/suno/list", downloadBody()); };
+  $("download").onclick = () => { if (!needAccount()) return; saveSettings(); runTask("/api/suno/download", downloadBody()); };
+  $("stop").onclick = stopTask;
   $("copyLyrics").onclick = () => current && navigator.clipboard.writeText(current.lyrics)
     .then(() => toast("Đã chép lời gốc."), () => toast("Không chép được: bôi đen rồi bấm Ctrl+C."));
   $("respell").onclick = respellCurrent;

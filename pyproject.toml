@@ -28,7 +28,7 @@ include = ["bokin_suno", "bokin_suno.*", "bokin_license", "bokin_studio", "bokin
 
 [tool.setuptools.package-data]
 bokin_suno = ["static/*.html", "version.txt"]
-bokin_studio = ["static/*.html", "version.txt"]
+bokin_studio = ["static/*.html", "static/*.svg", "version.txt"]
 
 [tool.ruff]
 line-length = 120

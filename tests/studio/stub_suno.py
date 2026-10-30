@@ -20,6 +20,11 @@ if cmd == "list":
     for n, title in enumerate(["Mưa đêm", "<b>Đậm</b>"], 1):
         out.write(f"{n}\t{title}\thttps://suno.com/song/{n:08d}-0000-0000-0000-000000000000\n")
     out.write("12:00:00  Có 2 bài ở link này\n")
+elif cmd == "download" and os.environ.get("STUB_LINES"):  # a long log, a title with its own [3/4]
+    for n in range(int(os.environ["STUB_LINES"])):
+        out.write(f"12:00:00  line {n} Waltz [3/4]\n")
+    out.write("12:00:00  Đã dừng: hết lượt tải\n")
+    sys.exit(1)
 elif cmd == "download":
     total = 5
     for n in range(1, total + 1):

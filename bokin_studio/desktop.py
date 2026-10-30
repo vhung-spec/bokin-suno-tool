@@ -203,7 +203,12 @@ def serve(updated: bool = False, idle_exit: bool | None = None) -> int:
 
     def watch():
         shown = not updated
+        last = time.time()
         while not shared.quit.wait(2):
+            now = time.time()
+            if now - last > 30:  # the computer slept: the open window has not had its chance to call yet
+                shared.seen = max(shared.seen, now)
+            last = now
             if not shown and time.time() - started > 10:
                 shown = True
                 if shared.seen <= started:  # no window came back after the update: open one

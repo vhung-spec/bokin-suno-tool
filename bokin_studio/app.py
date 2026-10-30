@@ -39,12 +39,41 @@ STATIC = Path(__file__).resolve().parent / "static"
 MASTER_PAGE = Path(__file__).resolve().parent.parent / "bokin_suno" / "static" / "index.html"
 LYRICS_FILES = {"index.html": "text/html; charset=utf-8", "engine.js": "text/javascript; charset=utf-8",
                 "hyphen-en-us.js": "text/javascript; charset=utf-8"}
-NO_TOKEN = {"/", "/favicon.ico", "/api/ping"} | {f"/loi-dong-am/{name}" for name in LYRICS_FILES}
+NO_TOKEN = {"/", "/favicon.ico", "/logo.svg", "/api/ping"} | {f"/loi-dong-am/{name}" for name in LYRICS_FILES}
 FREE_PATHS = NO_TOKEN | {"/api/info", "/api/license", "/api/update", "/api/update/check", "/api/update/install",
                          "/api/quit", "/api/shutdown"}
 ACCOUNT = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,39}")  # as suno/bokin_suno.py
 # the Master frame: Bokin Suno Master's page without its own header (title, version, update, quit: the Studio's)
 MASTER_STYLE = "<style>header { display: none !important; } main { padding-top: 12px !important; }</style>"
+# the Đổi lời frame: Lời Đồng Âm (its file unchanged: it is also published on its own) in the app's look, the colours,
+# type and corners of the app's other tabs; its title and lede are the tab's own, its Public Domain reminder stays.
+# No web fonts: the app's system font, and nothing fetched from the Internet.
+LYRICS_STYLE = """<style>
+:root:root:root {
+  --paper: #f6f5f2; --sheet: #ffffff; --ink: #1d1d1f; --muted: #6b6b70; --rule: #e3e1dc; --staff: #e3e1dc;
+  --accent: #3b5bdb; --accent-ink: #ffffff; --warn: #b26a00; --warn-bg: #fdf3e1;
+  --shadow: none;
+  --f-display: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --f-ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --f-lyric: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:root:root {
+    --paper: #141416; --sheet: #1d1d21; --ink: #ececf0; --muted: #9a9aa3; --rule: #2e2e35; --staff: #2e2e35;
+    --accent: #7b93ff; --accent-ink: #0d0d10; --warn: #ffc078; --warn-bg: rgba(255, 192, 120, .1);
+  }
+}
+body { font: 15px/1.5 var(--f-ui) !important; }
+.wrap { max-width: 1000px !important; padding-block: 16px 60px !important; gap: 16px !important; }
+.masthead h1, .masthead .lede, .staff { display: none !important; }
+.notice { font-size: 14px !important; padding: 10px 12px !important; }
+.sheet, .custom, .pop { border-radius: 12px !important; box-shadow: none !important; }
+.sheet-head h2, .guide h2, .custom summary { font-size: 16px !important; font-weight: 600 !important; }
+.btn, .sheet-head select, .opt .pick, .icon-btn, .own input, .custom textarea { border-radius: 8px !important; }
+.seg label:first-of-type { border-radius: 8px 0 0 8px !important; }
+.seg label:last-of-type { border-radius: 0 8px 8px 0 !important; }
+.lyrics, textarea#src { font-size: 15px !important; line-height: 1.75 !important; }
+</style>"""
 
 
 def master_page_path() -> Path:
@@ -136,6 +165,11 @@ class PickError(Exception):
     pass
 
 
+def can_pick() -> bool:
+    """Is there a folder dialog to show (Windows)?"""
+    return os.name == "nt"
+
+
 def pick_folder(start: str = "") -> str | None:
     """Windows' own folder dialog, on top of the app's window; "" if cancelled, None where there is none. PickError
     (the reason) if it could not be shown."""
@@ -208,7 +242,7 @@ def create_app(token: str, port: int = paths.PORTS[0], extra_hosts: tuple = (), 
             return Response(status_code=204)
         if path not in NO_TOKEN:
             supplied = request.headers.get("x-bokin-token") or request.query_params.get("t")
-            if not supplied or not secrets.compare_digest(supplied, token):
+            if not supplied or not secrets.compare_digest(supplied.encode("utf-8"), token.encode("utf-8")):
                 return JSONResponse({"detail": "missing or wrong token"}, status_code=403)
             shared.seen = time.time()
             if path not in FREE_PATHS and not licensing.licensed():
@@ -225,6 +259,12 @@ def create_app(token: str, port: int = paths.PORTS[0], extra_hosts: tuple = (), 
     def index():
         return (STATIC / "index.html").read_text(encoding="utf-8").replace("__BOKIN_TOKEN__", token)
 
+    @app.get("/logo.svg")
+    def logo():
+        """The app's icon (the "Ss" tile of the Bokin family): the window's icon and the page's header."""
+        return Response((STATIC / "logo.svg").read_bytes(), media_type="image/svg+xml",
+                        headers={"Cache-Control": "max-age=86400"})
+
     @app.get("/master", response_class=HTMLResponse)
     def master_frame():
         html = master_page_path().read_text(encoding="utf-8").replace("__BOKIN_TOKEN__", token)
@@ -234,6 +274,10 @@ def create_app(token: str, port: int = paths.PORTS[0], extra_hosts: tuple = (), 
     def lyrics_file(name: str):
         if name not in LYRICS_FILES:
             raise HTTPException(404, "not found")
+        if name == "index.html":  # (in the app's look, without web fonts)
+            html = (lyrics_dir() / name).read_text(encoding="utf-8")
+            html = re.sub(r'<link rel="(preconnect|stylesheet)" href="https://fonts\.[^"]*"[^>]*>\n?', "", html)
+            return HTMLResponse(html.replace("</head>", LYRICS_STYLE + "\n</head>", 1))
         return Response((lyrics_dir() / name).read_bytes(), media_type=LYRICS_FILES[name])
 
     # ---- the app ----
@@ -247,7 +291,7 @@ def create_app(token: str, port: int = paths.PORTS[0], extra_hosts: tuple = (), 
         return {"version": paths.version(), "out_dir": str(jobs.dir), "formats": list(FORMATS),
                 "extensions": sorted(AUDIO_EXTENSIONS), "desktop": desktop,
                 "presets": {name: preset(name).to_dict() for name in PRESETS},
-                "music_dir": str(paths.music_dir()), "pick_folder": os.name == "nt" and desktop}
+                "music_dir": str(paths.music_dir()), "pick_folder": desktop and can_pick()}
 
     @app.get("/api/license")
     def license_view():
@@ -303,7 +347,7 @@ def create_app(token: str, port: int = paths.PORTS[0], extra_hosts: tuple = (), 
             raise HTTPException(400, "Chỉ mở được thư mục ở app cài trên máy.")
         if body.get("job"):
             target = jobs.get(body["job"]).dir
-        elif body.get("folder"):
+        elif "folder" in body:  # (empty: the default music folder, as everywhere)
             target = _folder(body["folder"])
             if not target.is_dir():
                 raise HTTPException(400, "Thư mục chưa có (chưa tải bài nào vào đó)")
@@ -348,10 +392,11 @@ def create_app(token: str, port: int = paths.PORTS[0], extra_hosts: tuple = (), 
         return task.to_dict()
 
     @app.get("/api/suno")
-    def suno_state(since: int = 0):
+    def suno_state(since: int = 0, songs: int = 1):
+        """songs=0: the page already shows the listed songs of this task (they are not sent again)."""
         task = suno.task
         return {"accounts": suno.accounts(), "chrome": bool(os.environ.get("BOKIN_STUDIO_CHROME") or chrome_path()),
-                "task": task.to_dict(since) if task else None}
+                "task": task.to_dict(since, songs=bool(songs)) if task else None}
 
     @app.post("/api/suno/login")
     def suno_login(body: dict):

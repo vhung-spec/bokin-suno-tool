@@ -1,8 +1,8 @@
 """The Bokin app icons: one family for every app of the company (chosen 2026-10-19, "hướng B").
 
 Copied from brand/ of vhung-spec/bokin-video-fx (where the family lives), with one line added for
-Bokin Suno Master ("Su", green: a hue no other app uses) and one for Bokin Suno Studio ("Ss", coral). Add those
-lines there too.
+Bokin Suno Master ("Su", green: a hue no other app uses) and one for Bokin Suno Studio ("Ss", red: between the pink
+of Studio Music and the orange of Loop, clear of both). Add those lines there too.
 
 Each app is a tile of its own colour with its two-letter code in a deep shade of that colour at the bottom left, and
 the Bokin mark, a small open loop, at the top right. The letters are Be Vietnam Pro ExtraBold (SIL Open Font
@@ -37,7 +37,7 @@ APPS = {
     "key-center": ("Kc", "Bokin Key Center", "#D9DEE7", "#1A1D23"),
     "web": ("Wb", "Bokin Web", "#F2C54B", "#352805"),
     "suno-master": ("Su", "Bokin Suno Master", "#6FD98A", "#0A3218"),
-    "suno-studio": ("Ss", "Bokin Suno Studio", "#FF8A6B", "#3D1206"),
+    "suno-studio": ("Ss", "Bokin Suno Studio", "#F25A5A", "#3A0709"),
 }
 
 RADIUS = 0.23  # of the tile's side

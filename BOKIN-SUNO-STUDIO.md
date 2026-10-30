@@ -73,8 +73,11 @@ Key của Bokin Suno Master không mở được Bokin Suno Studio (và ngược
 
 ## Bước 2: tải nhạc
 
-1. Trên Chrome thường của bạn, mở **workspace** muốn tải, chép link trên thanh địa chỉ (dạng
+1. Trên Chrome thường của bạn, mở **workspace** muốn tải, chép link trên **thanh địa chỉ** (dạng
    `https://suno.com/create?wid=...`). Link một **playlist** hoặc **một bài** cũng được.
+   - Link chia sẻ (`suno.com/s/...`, nút Share của Suno) là link của **một bài**: app chỉ tải đúng bài đó.
+   - Bài của **người khác** (trang bài có nút **Follow** cạnh tên tác giả) app luôn **bỏ qua, không bấm tải**, nên
+     không tốn lượt tải. Trong `danh-sach.csv` bài đó ghi `nguoi_khac`.
 2. Mở thẻ **2. Tải nhạc**:
    1. Chọn **Tài khoản Suno**.
    2. Dán link vào ô **Link** (nhiều workspace: mỗi link một dòng).
@@ -86,7 +89,8 @@ Key của Bokin Suno Master không mở được Bokin Suno Studio (và ngược
    **Tối đa** và bấm **Tải về** lần nữa để tải hết.
 
 - Trong lúc tải, app hiện tiến độ từng bài và nhật ký. **Đừng bấm vào cửa sổ Chrome** app mở ra.
-- Nút **Dừng**: app dừng sau bài đang tải. Lần sau bấm **Tải về** là tải tiếp các bài còn thiếu.
+- Nút **Dừng**: app dừng **sau bài đang tải** (không cắt ngang một bài, vì Suno đã tính lượt tải của bài đó). Lần
+  sau bấm **Tải về** là tải tiếp các bài còn thiếu.
 - **Chạy lại thì chỉ tải bài mới.** Bài lỗi (ví dụ bài Suno đang tạo dở) được thử lại ở lần sau.
 - Ô **Đọc hết danh sách**: chỉ cần khi bạn chuyển bài **cũ** vào workspace (chúng nằm tít bên dưới danh sách).
 - Trong thư mục nhạc có file **danh-sach.csv** (mở bằng Excel): mỗi bài một dòng. **Đóng file này trong Excel** trước

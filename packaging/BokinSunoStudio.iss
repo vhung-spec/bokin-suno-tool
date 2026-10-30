@@ -56,7 +56,7 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopico
 
 [Run]
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
-; an update started from the app ("Cập nhật ngay" passes /RELAUNCH=1) starts it again; its window reconnects
+; an update started from the app (its update button passes /RELAUNCH=1) starts it again; its window reconnects
 Filename: "{app}\{#AppExe}"; Parameters: "--updated"; Flags: nowait; Check: Relaunch
 
 [Code]
@@ -79,7 +79,7 @@ begin
   begin
     if Exec(Installed, '--close', '', SW_HIDE, ewWaitUntilTerminated, Code) and (Code = 3) then
     begin
-      Result := 'Bokin Suno Studio is still downloading from Suno or mastering a song. Wait until it has finished (or press Dừng), then run this setup again.';
+      Result := 'Bokin Suno Studio is still downloading from Suno or mastering a song. Wait until it has finished (or press its Stop button), then run this setup again.';
       exit;
     end;
   end;

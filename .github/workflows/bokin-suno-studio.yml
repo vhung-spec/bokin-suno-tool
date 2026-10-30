@@ -16,8 +16,9 @@ on:
 permissions:
   contents: write  # publishing a release in this repository
 
+# one run at a time, whatever the branch: two runs must never replace studio-latest's files at the same time
 concurrency:
-  group: bokin-suno-studio-${{ github.ref }}
+  group: bokin-suno-studio
   cancel-in-progress: false
 
 jobs:
@@ -100,8 +101,9 @@ jobs:
           path: dist/BokinSunoStudio-Setup-*.exe
           retention-days: 7
 
+      # Published from one branch only (the others are tested, not shipped to the installed apps)
       - name: Publish (never Latest, which stays Bokin Suno Master's)
-        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        if: github.ref == 'refs/heads/claude/bokin-suno-studio'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -118,8 +120,20 @@ jobs:
             gh release create studio-latest --repo $repo --target ${{ github.sha }} --latest=false --title "Bokin Suno Studio (bản mới nhất)" --notes "Bản mới nhất của Bokin Suno Studio: tải BokinSunoStudio-Setup.exe bên dưới. App đã cài tự cập nhật từ đây (bokin-suno-studio-latest.json)."
             if ($LASTEXITCODE -ne 0) { throw "release studio-latest" }
           }
-          gh release upload studio-latest release/BokinSunoStudio-Setup.exe release/bokin-suno-studio-latest.json --repo $repo --clobber
-          if ($LASTEXITCODE -ne 0) { throw "upload to studio-latest" }
+          # never replace a newer version's manifest with an older one
+          $newer = $false
+          gh release download studio-latest --repo $repo --pattern bokin-suno-studio-latest.json --output current.json --clobber 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            $current = [version](Get-Content current.json -Raw | ConvertFrom-Json).version
+            $newer = $current -gt [version]$env:APP_VERSION
+            "studio-latest has ${current}; this build is $env:APP_VERSION"
+          }
+          if ($newer) {
+            "studio-latest already has a newer version: left as it is"
+          } else {
+            gh release upload studio-latest release/BokinSunoStudio-Setup.exe release/bokin-suno-studio-latest.json --repo $repo --clobber
+            if ($LASTEXITCODE -ne 0) { throw "upload to studio-latest" }
+          }
           # "Latest" must still be Bokin Suno Master's: its installed apps read their updates from there
           $latestAfter = gh api "repos/$repo/releases/latest" --jq .tag_name
           "Latest before: $latestBefore, after: $latestAfter"

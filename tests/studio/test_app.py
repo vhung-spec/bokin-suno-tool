@@ -234,3 +234,62 @@ def test_shutdown_ends_a_task(client, monkeypatch):
     assert client.post("/api/quit", headers=H, json={}).json() == {"busy": True}
     client.post("/api/shutdown", headers=H)
     assert wait_task(client)["state"] == "stopped"
+
+
+# ---- what the review found ----
+
+def test_a_long_log_keeps_coming(client, monkeypatch):
+    """Over KEEP_LINES lines: the page, asking from where it is, still gets the last lines (the stop reason)."""
+    from bokin_studio.suno_tasks import KEEP_LINES
+
+    monkeypatch.setenv("STUB_LINES", str(KEEP_LINES + 250))
+    client.post("/api/suno/download", headers=H, json={"account": "suno1", "links": "https://suno.com/x",
+                                                       "folder": str(Path.home())})
+    task = wait_task(client)
+    assert task["line_count"] == KEEP_LINES + 251
+    later = client.get("/api/suno", headers=H, params={"since": KEEP_LINES + 200}).json()["task"]
+    assert later["lines"][-1].endswith("Đã dừng: hết lượt tải") and len(later["lines"]) == 51
+    assert (task["done"], task["total"]) == (0, 0), "a song title's own [3/4] is not progress"
+
+
+def test_a_task_that_cannot_start(client, monkeypatch):
+    """The program cannot be started: the task fails with the reason, and the app is not left busy."""
+    import subprocess
+
+    def refuse(*a, **kw):
+        raise OSError("no such program")
+
+    monkeypatch.setattr(subprocess, "Popen", refuse)
+    task = client.post("/api/suno/list", headers=H, json={"account": "suno1", "links": "https://suno.com/x"}).json()
+    assert task["state"] == "failed" and "no such program" in task["lines"][0] and task["line_count"] == 1
+    assert not client.app_state.bokin.busy()
+    assert client.post("/api/suno/stop", headers=H, json={}).json() == {"stopping": False}
+
+
+def test_temp_folder_emptied_meanwhile(client):
+    """Windows' cleanup empties %TEMP% while the app is open: the next task still runs."""
+    import shutil
+
+    shutil.rmtree(client.app_state.suno.work)
+    client.post("/api/suno/list", headers=H, json={"account": "suno1", "links": "https://suno.com/x"})
+    assert wait_task(client)["state"] == "done"
+
+
+def test_open_folder(client, tmp_path, monkeypatch):
+    from bokin_studio import app as studio_app
+
+    opened = []
+    monkeypatch.setattr(studio_app, "open_in_explorer", opened.append)
+    desktop = TestClient(studio_app.create_app(TOKEN, port=8776, desktop=True, suno_data=tmp_path / "s",
+                                               master_out=tmp_path / "m"), base_url="http://127.0.0.1:8776")
+    from bokin_studio import paths
+    paths.music_dir().mkdir(parents=True, exist_ok=True)
+    assert desktop.post("/api/open", headers=H, json={"folder": ""}).status_code == 200
+    assert opened[-1] == paths.music_dir(), "an empty folder box: the default music folder, not Master's"
+    assert desktop.post("/api/open", headers=H, json={}).status_code == 200
+    assert opened[-1] == (tmp_path / "m").resolve(), "Bokin Suno Master's page: the Master folder"
+    assert desktop.post("/api/open", headers=H, json={"folder": str(tmp_path / "none")}).status_code == 400
+
+
+def test_an_odd_token_is_refused(client):
+    assert client.get("/api/suno", params={"t": "tökén"}).status_code == 403

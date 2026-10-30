@@ -19,7 +19,7 @@ def files(folder, names):
     return [(os.path.join(ROOT, folder, name), folder) for name in names]
 
 
-datas = (files("bokin_studio/static", ["index.html"]) + files("bokin_suno/static", ["index.html"])
+datas = (files("bokin_studio/static", ["index.html", "logo.svg"]) + files("bokin_suno/static", ["index.html"])
          + files("loi-dong-am", ["index.html", "engine.js", "hyphen-en-us.js"])
          + files("suno", ["bokin_suno.py", "web.py", "folder.py"]))
 for package in ("bokin_studio", "bokin_suno"):

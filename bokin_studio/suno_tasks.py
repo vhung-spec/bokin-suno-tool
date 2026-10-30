@@ -7,8 +7,9 @@ bokin_studio suno ...` from the source folder. Its data folder (accounts, a Chro
 is the app's suno\\ folder. Everything Suno-side keeps the command line's rules: only Suno's own Download button,
 never Buy/Upgrade, stop when the plan's downloads are used up.
 
-Stop: a download stops before its next song once the stop file exists (BOKIN_SUNO_STOP); any other task, or a
-download that does not stop within a while, is ended.
+Stop: a download stops before its next song once the stop file exists (BOKIN_SUNO_STOP), never in the middle of a
+song (Suno has counted its download by then); only a download that has not stopped long after the longest a song
+can take is ended. Any other task (a sign-in waiting for its window) is ended at once.
 """
 
 import os
@@ -20,10 +21,10 @@ import threading
 import time
 from pathlib import Path
 
-PROGRESS = re.compile(r"\[(\d+)/(\d+)\]")
+PROGRESS = re.compile(r"^\d\d:\d\d:\d\d  \[(\d+)/(\d+)\] ")  # "12:00:00  [3/20] Title: ...", not a title's own [3/4]
 LISTED = re.compile(r"^(\d+)\t(.*)\t(https?://\S+)$")
 KEEP_LINES = 400
-STOP_GRACE = 30  # seconds a download has to stop by itself before it is ended
+STOP_GRACE = 15 * 60  # seconds a download has to stop by itself (one song: up to 2 x 5 minutes) before it is ended
 
 
 class Busy(Exception):
@@ -64,18 +65,22 @@ class Task:
         self.state = "running"  # running, done, failed, stopped
         self.code = None
         self.lines = []
+        self.first = 0  # how many lines were dropped from the front of `lines` (KEEP_LINES): line numbers go on
         self.songs = []  # the songs a "list" printed: {"n", "title", "link"}
         self.done = self.total = 0
         self.started, self.ended = time.time(), None
         self.stopping = False
         self.proc = None
+        self.stop_file = None
 
-    def to_dict(self, since=0):
+    def to_dict(self, since=0, songs=True):
+        """since: the number of lines the page has already (line numbers count from the task's start)."""
+        first, lines = self.first, list(self.lines)  # (one look: the reader thread may add lines meanwhile)
         return {"id": self.id, "kind": self.kind, "label": self.label, "state": self.state, "code": self.code,
-                "lines": self.lines[since:] if since <= len(self.lines) else self.lines,
-                "line_count": len(self.lines), "songs": self.songs if self.state != "running" else [],
-                "done": self.done, "total": self.total, "started": self.started, "ended": self.ended,
-                "stopping": self.stopping}
+                "lines": lines[max(0, since - first):], "line_count": first + len(lines),
+                "songs": self.songs if songs and self.state != "running" else [],
+                "song_count": len(self.songs), "done": self.done, "total": self.total, "started": self.started,
+                "ended": self.ended, "stopping": self.stopping}
 
 
 class SunoTasks:
@@ -95,26 +100,27 @@ class SunoTasks:
                 raise Busy(f"Đang chạy: {self.task.label}. Chờ xong (hoặc bấm Dừng) rồi làm tiếp.")
             task = Task(kind, list(args), label)
             self.task = task
-        out = self.work / f"{task.id}.log"
-        stop = self.work / f"{task.id}.stop"
-        out.write_text("", encoding="utf-8")
-        command = suno_command() + ["--data", str(self.data)]
-        if headless:
-            command.append("--headless")
-        if chrome:
-            command += ["--chrome", chrome]
-        command += [kind] + task.args
-        env = dict(os.environ, BOKIN_STUDIO_OUTPUT=str(out), BOKIN_SUNO_STOP=str(stop), PYTHONIOENCODING="utf-8",
-                   PYTHONUTF8="1")
-        flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         try:
+            # (the temporary folder again each time: Windows' cleanup may have emptied it while the app was open)
+            self.work.mkdir(parents=True, exist_ok=True)
+            out = self.work / f"{task.id}.log"
+            task.stop_file = self.work / f"{task.id}.stop"
+            out.write_text("", encoding="utf-8")
+            command = suno_command() + ["--data", str(self.data)]
+            if headless:
+                command.append("--headless")
+            if chrome:
+                command += ["--chrome", chrome]
+            command += [kind] + task.args
+            env = dict(os.environ, BOKIN_STUDIO_OUTPUT=str(out), BOKIN_SUNO_STOP=str(task.stop_file),
+                       PYTHONIOENCODING="utf-8", PYTHONUTF8="1")
+            flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
             task.proc = subprocess.Popen(command, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                                          stderr=subprocess.DEVNULL, creationflags=flags)
-        except OSError as e:
-            task.lines.append(f"Không chạy được phần tải nhạc: {e}")
+        except Exception as e:  # noqa: BLE001 - never a task left "running" with nothing running
+            task.lines.append(f"Không chạy được phần tải nhạc: {type(e).__name__}: {e}")
             task.state, task.ended = "failed", time.time()
             return task
-        task.stop_file = stop
         threading.Thread(target=self._follow, args=(task, out), daemon=True, name="suno-task").start()
         return task
 
@@ -156,7 +162,9 @@ class SunoTasks:
             task.done, task.total = int(m.group(1)), int(m.group(2))
         task.lines.append(line)
         if len(task.lines) > KEEP_LINES:
-            del task.lines[:len(task.lines) - KEEP_LINES]
+            drop = len(task.lines) - KEEP_LINES
+            del task.lines[:drop]
+            task.first += drop
 
     def stop(self):
         """Stop the running task: a download after its current song, anything else now."""
@@ -164,7 +172,7 @@ class SunoTasks:
         if not task or task.state != "running":
             return False
         task.stopping = True
-        if task.kind == "download":
+        if task.kind == "download" and task.stop_file:
             try:
                 task.stop_file.write_text("", encoding="utf-8")
             except OSError:
