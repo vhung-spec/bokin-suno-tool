@@ -42,13 +42,23 @@
   tải của gói, không bao giờ bấm Buy/Upgrade; hết lượt thì dừng.
 - Ảnh lỗi: cửa sổ, menu và hộp thoại đang mở, nhãn các nút; không lưu cả trang (trang chứa dữ liệu tài khoản).
 - Suno giả lập phải đi cùng `SEL`: sửa selector thì sửa cả Suno giả lập và bài thử.
-- Chưa thử trên suno.com thật: máy chủ phiên làm việc không vào được suno.com; sửa `SEL` theo ảnh và file `.html` chủ
-  gửi.
-- Theo ảnh chủ gửi (30/10/2026): ⋯ → Download mở hộp "Download 'tên bài'" (M4A, MP3 chọn sẵn, WAV, MP4 video asset,
-  Stems & MIDI; nút "Unlock & Download"; "Plan Premier · Downloads 59 · Refreshes 11/28/26"). Tool chọn dòng WAV rồi
-  bấm nút đó; "Downloads 0" thì dừng, không bấm. Bài của người khác có nút Follow cạnh tên tác giả: bỏ qua. Link
+- Máy chủ phiên làm việc trên cloud không vào được suno.com. Thử trên suno.com thật phải chạy trên máy Windows của chủ
+  (hồ sơ Chrome đã đăng nhập của app: `--data "%APPDATA%\Bokin\SunoStudio\suno"`, app phải tắt). Đã thử như vậy
+  ngày 30/10/2026: `list`, `download` WAV chạy đúng.
+- suno.com thật (30/10/2026): menu ⋯ (nút `More options`, `role=menu`, các `div role=menuitem`): Remix, Edit,
+  Publish, Share, Download, Manage, Add to Queue, Add to Playlist, Song Radio, Report, Move to Trash. Download mở hộp
+  `role=dialog` "Download 'tên bài'": các dòng M4A, MP3, WAV, MP4 video asset là `<button>` **không có aria-***;
+  dòng đang chọn chỉ có dấu ✓ (một `svg`). **Chọn được nhiều dòng một lúc** (MP3 chọn sẵn; bấm một dòng là chọn/bỏ
+  chọn), dòng Stems & MIDI có nút Manage. Nút "Unlock & Download" ("Plan Premier · Downloads 59 · Refreshes
+  11/28/26"), hoặc "Download" và "You've unlocked this song..." với bài đã tải. Tool chọn WAV, bỏ chọn mọi dòng
+  khác, rồi bấm nút đó; "Downloads 0" thì dừng, không bấm. Trên ảnh bìa có nút "Download cover image": không bấm.
+- Trang Create (`suno.com/create`, có thể có `?wid=`): danh sách bài là khung cuộn (`clip-browser-list-scroller`)
+  chia trang bằng nút Previous page / Next page; **Next page vẫn bật ở trang cuối** và bấm không đổi gì: tool dừng
+  khi bấm Next page mà danh sách không đổi.
+- Bài của người khác có nút Follow cạnh tên tác giả: bỏ qua. Link
   chia sẻ `suno.com/s/...` dẫn tới một bài; trang bài có cột Similar (bài người khác): không bao giờ đọc làm danh
-  sách. Suno giả lập có cả hai giao diện (`download_ui` "box"/"menu").
+  sách. Suno giả lập có cả hai giao diện (`download_ui` "box"/"menu"), hộp chọn nhiều dòng như thật, và
+  `paging` "pages" như trang Create.
 - Lời bài hát: tải xong một bài, tool lưu lời đang hiện trên trang bài hát vào `Tên bài.txt` cạnh file nhạc
   (`web.JS_LYRICS`, `SEL["lyrics"]`; chưa thử trên suno.com thật). Một tên file (bỏ đuôi) thuộc về một bài.
 - Máy chủ phiên làm việc chỉ có Chromium của Playwright, không có Google Chrome: ở đó `tests/test_suno.py` hỏng từ

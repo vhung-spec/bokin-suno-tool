@@ -3,8 +3,9 @@
 Runs the program as a person would (python suno/bokin_suno.py ...): sign in, check, a workspace whose list loads as
 it scrolls, a few songs first (--limit), then the rest with a song still being made and a song page that fails once,
 a second run that reads only the top of the list yet tries the unfinished song again, the lyrics kept next to each
-song (none for an instrumental), MP3 through a "uses 1 download" box opening in a new tab, several links at once (one
-of them bad), a Load more button, the Stop button of Bokin Suno Studio, a Suno page
+song (none for an instrumental), the download box where several rows can be chosen (WAV alone is), MP3 through a
+"uses 1 download" box opening in a new tab, several links at once (one of them bad), a Load more button, pages behind a
+Next page button that stays enabled on the last page, the Stop button of Bokin Suno Studio, a Suno page
 without window.Clerk (only Clerk's cookies tell who is signed in), share links (suno.com/s/...: the one song, never
 the Similar list beside it), someone else's song (never downloaded), the plan's downloads used up (nothing
 bought), a changed Suno page, the wrong account, a sign-out, removing the account.
@@ -23,6 +24,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unicodedata
 from pathlib import Path
 
@@ -165,6 +167,8 @@ def main():
             else:
                 check(not lyrics.exists(), f"no lyrics file for the instrumental {rec.get('file')}")
         check(default_lyrics("x").count("\n\n") == 1, "lyrics keep their blank line")
+        check(fake.picked and all(f == "wav" for _, f in fake.picked),
+              "WAV alone chosen in the download box (MP3, chosen at first, unchosen)")
 
         print("== again, with the song finished and two new songs: only those three, reading only the top of the list")
         fake.songs[making]["status"] = "complete"
@@ -211,6 +215,12 @@ def main():
         fake.config["paging"] = "button"
         out = cli("list", "suno1", link, contains=f"Có {len(fake.workspace)} bài")
         check(fake.stray not in out, "the player's song is not listed")
+        print("== pages, as on suno.com's Create page: Next page stays enabled on the last page and does nothing")
+        fake.config["paging"] = "pages"
+        started = time.monotonic()
+        out = cli("list", "suno1", link, contains=f"Có {len(fake.workspace)} bài")
+        check(len(fake.workspace) > 15 and all(s in out for s in fake.workspace), "every page read")
+        check(time.monotonic() - started < 120, "stopped at the last page (not round and round)")
         fake.config["paging"] = "scroll"
 
         print("== the Stop button of Bokin Suno Studio")
@@ -261,6 +271,8 @@ def main():
         fake.config["download_ui"] = "box"
         fake.config["downloads_left"] = None
 
+        check(fake.pressed == [], f"Move to Trash, Download cover image, Manage never pressed ({fake.pressed})")
+
         print("== Suno's page changed")
         fake.config["more_label"] = "Song actions"
         for n in range(3):
@@ -268,7 +280,7 @@ def main():
         cli("download", "suno1", link, "--out", str(nhac), expect=1, contains="đổi giao diện")
         check(any(p.suffix == ".png" for p in (data / "logs").iterdir()), "a screenshot of the failure")
         check(any(p.suffix == ".html" for p in (data / "logs").iterdir()), "the page's buttons for fixing the tool")
-        fake.config["more_label"] = "More Options"
+        fake.config["more_label"] = "More options"
 
         print("== the wrong account")
         saved = (data / "accounts.json").read_text(encoding="utf-8")

@@ -1,11 +1,13 @@
 """suno.com, driven in a real Chrome: sign in once, read the songs of a workspace, download each song.
 
 No Suno API: the program does what a person does on suno.com. It opens the workspace (or playlist) link, reads the
-song links in its list while scrolling, then for each song opens the song's page, reads the lyrics it shows, and
-presses More options → Download. suno.com (October 2026, seen on the owner's computer) then opens a box "Download
-'<title>'" listing M4A, MP3, WAV, MP4 video asset, Stems & MIDI, with the plan's downloads left ("Downloads 59") and
-an "Unlock & Download" button: the program picks WAV (or MP3) there and presses that button. The older menu (Download
-→ WAV Audio, then a box with Download File) works too. The program keeps the file Chrome receives. Downloads go
+song links in its list while scrolling (and through Next page, which suno.com leaves enabled on the last page), then
+for each song opens the song's page, reads the lyrics it shows, and presses More options → Download. suno.com (October
+2026, tried on the owner's computer) then opens a box "Download '<title>'" listing M4A, MP3, WAV, MP4 video asset,
+Stems & MIDI, with the plan's downloads left ("Downloads 59") and an "Unlock & Download" button ("Download" for a song
+downloaded before). Several rows can be chosen at once (MP3 is, at first) and a check mark shows which: the program
+chooses WAV (or MP3), unchooses every other row, and presses that button. The older menu (Download → WAV Audio, then a
+box with Download File) works too. The program keeps the file Chrome receives. Downloads go
 through Suno's own Download button, so Suno counts them exactly as when a person downloads by hand; when Suno says
 the plan's downloads are used up, the run stops. The program never presses a Buy/Upgrade button and never takes the
 audio any other way. Every selector and button text is in SEL. BOKIN_SUNO_URL points the program at a stand-in Suno
@@ -32,6 +34,9 @@ SEL = {
     "dialog": '[role="dialog"], [role="alertdialog"], [aria-modal="true"]',
     # the rows of the download box's list of formats (M4A, MP3, WAV, MP4 video asset, Stems & MIDI)
     "dialog_option": 'button, [role="radio"], [role="option"], [role="menuitemradio"], [role="checkbox"], label, li',
+    # the check mark a chosen row of the download box shows (suno.com, October 2026: the row's only icon; the rows
+    # carry no aria-checked / aria-pressed)
+    "dialog_check": "svg",
     "dialog_button": 'button, a[href], [role="button"]',
     "song_title": "h1",
     # the lyrics on a song page: these first, else the longest multi-line text shown with its line breaks kept
@@ -42,6 +47,9 @@ SEL = {
     "text_format": {"wav": re.compile(r"\bwav\b", re.I), "mp3": re.compile(r"\bmp3\b", re.I)},
     # a row of the download box: exactly the format's name (not "MP4 video asset", "M4A")
     "text_dialog_format": {"wav": re.compile(r"^wav( audio)?$", re.I), "mp3": re.compile(r"^mp3( audio)?$", re.I)},
+    # any format row of the download box: several can be chosen at once (MP3 at first), and every chosen row is
+    # downloaded, so all but the wanted one are unchosen ("Close", "Manage", "Download" are not rows)
+    "text_dialog_row": re.compile(r"^(m4a|mp3|wav|flac|aac|ogg|mp4|video|stems|midi)\b", re.I),
     "text_go": re.compile(r"^(download( file| wav| mp3| audio| song)?|unlock\s*(&|and)\s*download|continue|confirm)$",
                           re.I),
     # the download box's count of the plan's downloads left, at 0: nothing is pressed (its words may run together:
@@ -98,6 +106,10 @@ JS_COLLECT = r"""(sel) => {
   const bottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 4;
   return {songs, bottom, height: box.scrollHeight};
 }"""
+
+# The song links the list shows now (to tell whether Next page / Load more changed it)
+JS_SHOWN = r"""(sel) => { const box = document.querySelector('[data-bokin-list]') || document;
+  return [...box.querySelectorAll(sel)].map(a => a.getAttribute('href')).join('|'); }"""
 
 
 # The lyrics a song page shows, as plain text ("" for none: an instrumental, or a page laid out otherwise)
@@ -410,10 +422,15 @@ def list_songs(page, url, log, known=None, known_in_a_row=None, limit_minutes=20
         elif r["bottom"]:
             quiet += 1
         if quiet >= 3:  # at the end and nothing new after three looks: the next page, if there is one
-            more = page.locator(SEL["next_page"]).first
-            if not _enabled(more):
+            more = next((b for b in page.locator(SEL["next_page"]).all() if _enabled(b)), None)
+            if more is None:
                 break
+            shown = page.evaluate(JS_SHOWN, SEL["song_link"])
             more.click()
+            # suno.com's Create page keeps Next page enabled on its last page, where a click changes nothing
+            if not _poll(page, lambda: page.evaluate(JS_SHOWN, SEL["song_link"]) != shown, 10_000, 250):
+                log.debug("Next page changed nothing: the end of the list")
+                break
             page.evaluate("() => { const b = document.querySelector('[data-bokin-list]') || document.scrollingElement; "
                           "b.scrollTop = 0; }")
             quiet = 0
@@ -512,7 +529,8 @@ def _dialog_format(page, fmt):
 
 
 def _chosen(row):
-    """Is this row of the download box the chosen one? None when the page does not say (no such attribute)."""
+    """Is this row of the download box chosen? Its aria-checked / aria-pressed... when it has one, else its check
+    mark (suno.com, October 2026: a chosen row shows one, the others none)."""
     for name in ("aria-checked", "aria-selected", "aria-pressed", "data-state", "data-selected", "data-checked"):
         try:
             value = row.get_attribute(name)
@@ -520,7 +538,42 @@ def _chosen(row):
             value = None
         if value is not None:
             return value.lower() in ("true", "checked", "on", "active", "selected", "")
-    return None
+    try:
+        return any(_visible(mark) for mark in row.locator(SEL["dialog_check"]).all())
+    except Exception:
+        return False
+
+
+def _box_rows(page):
+    """The format rows of the open download box: [(row, its text)]."""
+    rows = []
+    for box in page.locator(SEL["dialog"]).all():
+        if not _visible(box):
+            continue
+        for row in box.locator(SEL["dialog_option"]).all():
+            text = _text(row) if _visible(row) else ""
+            if SEL["text_dialog_row"].search(text):
+                rows.append((row, text))
+    return rows
+
+
+def _pick_format(page, fmt):
+    """The download box lets several rows be chosen at once (MP3 at first) and downloads every chosen one: the
+    format's row is chosen, then every other chosen row unchosen, so the box gives that one file."""
+    want = SEL["text_dialog_format"][fmt]
+    for _ in range(8):
+        rows = _box_rows(page)
+        mine = [row for row, text in rows if want.search(text)]
+        if not mine:
+            break
+        others = [row for row, text in rows if not want.search(text) and _chosen(row)]
+        if _chosen(mine[0]) and not others:
+            return
+        row = mine[0] if not _chosen(mine[0]) else others[0]
+        was = _chosen(row)
+        row.click()
+        _poll(page, lambda: _chosen(row) != was, 2000)
+    raise SunoError("stuck", f"Không chọn được riêng dòng {fmt.upper()} trong hộp Download của Suno")
 
 
 def _open_format_item(page, fmt):
@@ -609,25 +662,17 @@ def download_song(page, catcher, song, fmt, dest, log, timeout_seconds=300):
     lyrics = song_lyrics(page)
     if not _enabled(item):
         raise SunoError("not_ready", f"Suno chưa cho tải bài này dạng {fmt.upper()} (bài chưa tạo xong hoặc bị lỗi)")
-    item.click()
-    clicked = {}
-    if _dialog_format(page, fmt) is not None:  # the download box: the format's row must be the chosen one first
-
-        def chosen():
-            row = _dialog_format(page, fmt)
-            return row is not None and _chosen(row) is not False  # (no attribute to tell: taken as chosen)
-
-        if not _poll(page, chosen, 1500):
-            row = _dialog_format(page, fmt)
-            if row is not None:
-                row.click()
-            if not _poll(page, chosen, 2000):
-                raise SunoError("stuck", f"Không chọn được dòng {fmt.upper()} trong hộp Download của Suno")
+    if _dialog_format(page, fmt) is not None:  # the download box: a click on a row chooses or unchooses it
+        _pick_format(page, fmt)
         page.wait_for_timeout(300)
+    else:
+        item.click()
+    clicked = {}
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
-        if catcher.downloads:
-            d = catcher.downloads[-1]
+        if catcher.downloads:  # the file in the format asked for, if several came
+            d = next((x for x in reversed(catcher.downloads) if x.suggested_filename.lower().endswith("." + fmt)),
+                     catcher.downloads[-1])
             failure = d.failure()
             if failure:
                 raise SunoError("stuck", f"Chrome tải file lỗi: {failure}")

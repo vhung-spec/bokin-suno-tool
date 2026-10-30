@@ -19,15 +19,16 @@ Một vòng làm việc: **tải bài về → xem lời → đổi lời → ch
 - **Cần Google Chrome** trên máy (app dùng Chrome thật để làm việc trên suno.com). Chưa có thì cài từ
   <https://www.google.com/chrome/>.
 - **App không dùng API của Suno.** Nó mở Chrome đã đăng nhập Suno rồi bấm đúng các nút một người bấm:
-  **⋯ → Download → WAV Audio → Download File**.
+  **⋯ → Download**, trong hộp Download chọn **WAV** (bỏ chọn MP3), rồi **Unlock & Download** (hoặc **Download** với
+  bài đã tải trước đó).
 - **Lượt tải của gói Suno:** mỗi bài tính một lượt như khi tải bằng tay. Hết lượt thì app **dừng**, **không bao giờ
   bấm mua thêm** (Buy/Upgrade).
 - **App không lưu mật khẩu.** Phiên đăng nhập Suno nằm trong hồ sơ Chrome riêng của từng tài khoản, trong thư mục
   `%APPDATA%\Bokin\SunoStudio\suno`. Không chép thư mục đó sang máy khác và không gửi nó cho ai.
 - **Điều khoản của Suno không cho phép công cụ tự động.** App đi chậm như người, nhưng rủi ro tài khoản bị nhắc nhở
   hoặc khoá **vẫn có**. Nên tải vừa phải.
-- **Phần Suno chưa được thử trên suno.com thật** (máy dùng để viết app không vào được suno.com). App đã được thử kỹ
-  trên một trang Suno giả lập. Lần chạy đầu có thể cần sửa. Khi lỗi, app lưu ảnh màn hình và một file `.html` trong
+- **Phần Suno đã được thử trên suno.com thật** (30/10/2026: xem danh sách, tải WAV). Suno đổi giao diện thì app có
+  thể cần sửa lại. Khi lỗi, app lưu ảnh màn hình và một file `.html` trong
   `%APPDATA%\Bokin\SunoStudio\suno\logs`: gửi hai file đó cho người sửa, **nhớ che tên tài khoản và email** trong ảnh.
   - Phần **lời bài hát** cũng vậy: app đọc lời đang hiện trên trang bài hát Suno. Nếu nút **Lời** của bài bị mờ
     dù bài có lời, hãy báo lại kèm ảnh trang bài hát đó.

@@ -3,17 +3,22 @@
 It copies only what the program touches (suno/web.py SEL): window.Clerk for the sign-in state (or, with
 config["clerk_global"] off, as suno.com showed on the owner's computer, none: only Clerk's cookies __client_uat and
 __session, a token whose "sub" is the user id), song links in a
-scrolling list that loads more as it scrolls (or by a Load more button) and drops rows scrolled far away, a player
-bar with a link to a song not in the workspace, More Options → Download → MP3 Audio / WAV Audio, the WAV box that
+scrolling list that loads more as it scrolls (or by a Load more button, or in pages behind Previous page / Next page
+buttons, Next page left enabled on the last page as on suno.com's Create page) and drops rows scrolled far away, a
+player bar with a link to a song not in the workspace, a "Download cover image" button on the song's cover, the song's
+More options menu with suno.com's items (Move to Trash among them, never to be pressed), Download → MP3 Audio / WAV
+Audio, the WAV box that
 prepares the file before its Download File button works, an optional "uses 1 download" box for MP3, the box saying
 the plan's downloads are used up, with a Buy button that must never be pressed, song pages that fail once
 (`fail_once`), the lyrics on a song page (none for an instrumental), and as on suno.com: share links (/s/<code>,
 which the page's script sends on to the song's page), a Similar list of other people's songs beside every song, and
 on other people's songs a Follow button by the artist's name. Downloading, as on suno.com in October 2026
-(config["download_ui"] "box", the default): More Options → Download opens a box "Download '<title>'" with rows M4A,
-MP3 (chosen at first), WAV, MP4 video asset, Stems & MIDI, a checkmark on the chosen row (and aria-pressed only with
-config["box_aria"]), the plan's downloads left and an "Unlock & Download" button ("Download" once the song has been
-downloaded). config["download_ui"] "menu" is the older menu: Download → WAV Audio / MP3 Audio and its boxes. Files arrive as a download
+(config["download_ui"] "box", the default): More options → Download opens a box "Download '<title>'" with rows M4A,
+MP3, WAV, MP4 video asset, Stems & MIDI (a Manage button). A click on a row chooses or unchooses it, several can be
+chosen at once (MP3 is, at first), and every chosen format is downloaded (here one file each). A chosen row shows a
+check mark and nothing else says so (aria-pressed only with config["box_aria"]). Below: the plan's downloads left and
+an "Unlock & Download" button ("Download" and "You've unlocked this song" once the song has been downloaded).
+config["download_ui"] "menu" is the older menu: Download → WAV Audio / MP3 Audio and its boxes. Files arrive as a download
 (from a blob or a link) or open in a new tab, as `config["delivery"]` says. Like Suno, a song counts as one download
 whatever the format and however often it is downloaded.
 """
@@ -52,7 +57,7 @@ def default_lyrics(title):
 class FakeSuno:
     def __init__(self):
         self.config = {"auto_signin": True, "user_id": USER_ID, "delivery": "blob", "confirm": False,
-                       "downloads_left": None, "paging": "scroll", "prepare_ms": 800, "more_label": "More Options",
+                       "downloads_left": None, "paging": "scroll", "prepare_ms": 800, "more_label": "More options",
                        "clerk_global": True, "download_ui": "box", "box_aria": False}
         self.sessions = set()
         self.signins = 0
@@ -61,6 +66,7 @@ class FakeSuno:
         self.counted = []  # songs Suno counted as downloads (each song once)
         self.picked = []  # (song id, format) every time a format was chosen in the menu
         self.buy_clicks = 0
+        self.pressed = []  # buttons the program must never press: Move to Trash, Download cover image, Manage
         self.fail_once = set()  # song pages that answer with an error the first time
         self.list_pages = []  # the pages of the workspace's list that were asked for
         self.lock = threading.Lock()
@@ -177,7 +183,7 @@ class FakeSuno:
                                       "left": fake.config["downloads_left"], "unlocked": parts[1] in fake.counted})
                     similar = "".join(
                         f'<div class="row"><a href="/song/{s}">{html.escape(fake.songs[s]["title"])}</a>'
-                        f'<button aria-label="More Options">...</button></div>' for s in fake.similar)
+                        f'<button aria-label="More options">...</button></div>' for s in fake.similar)
                     artist = ("Bokin" if song["owner"] == "me" else "Dr. Someone Else") + (
                         "" if song["owner"] == "me" else ' <button class="follow">Follow</button>')
                     body = (SONG_BODY.replace("__TITLE__", html.escape(song["title"]))
@@ -208,6 +214,9 @@ class FakeSuno:
                     return self._send(401, "signed out")
                 if u.path == "/api/buy":
                     fake.buy_clicks += 1
+                    return self._send(200, "{}", "application/json")
+                if u.path == "/api/pressed":
+                    fake.pressed.append(q.get("what", [""])[0])
                     return self._send(200, "{}", "application/json")
                 if len(parts) == 3 and parts[:2] == ["api", "download"] and parts[2] in fake.songs:
                     sid, fmt = parts[2], q.get("fmt", [""])[0]
@@ -261,6 +270,8 @@ SIGNIN_PAGE = """<!doctype html><html lang="en"><body>
 WORKSPACE_BODY = """
 <aside><a href="/create">Create</a> <a href="/me">Library</a></aside>
 <h2>My Workspace</h2>
+<div id="pager" hidden><button aria-label="Previous page" id="prevpage">&lsaquo;</button>
+  <button aria-label="Next page" id="nextpage">&rsaquo;</button></div>
 <div id="songs"><div id="spacer"></div><div id="rows"></div><button id="loadmore" hidden>Load more</button></div>
 <div class="player">Now playing: <a href="/song/" id="stray">Bài đang phát</a></div>
 """
@@ -271,16 +282,21 @@ const box = document.getElementById('songs'), rows = document.getElementById('ro
 const spacer = document.getElementById('spacer'), more = document.getElementById('loadmore');
 document.getElementById('stray').href = '/song/' + cfg.stray;
 let page = 0, hasMore = true, loading = false, dropped = 0;
+const prev = document.getElementById('prevpage');
 function load() {
   if (loading || !hasMore) return;
   loading = true;
   fetch(`/api/ws/${cfg.wid}?page=${page}`).then(r => r.json()).then(j => {
+    if (cfg.paging === 'pages') {  // one page at a time, like suno.com's Create page
+      rows.replaceChildren(); dropped = 0; spacer.style.height = '0px'; box.scrollTop = 0;
+      prev.disabled = page === 0;
+    }
     for (const s of j.songs) {
       const row = document.createElement('div'); row.className = 'row';
       const cover = document.createElement('a'); cover.href = '/song/' + s.id; cover.innerHTML = '<img alt="">';
       const title = document.createElement('a'); title.href = '/song/' + s.id; title.textContent = s.title;
       const tag = document.createElement('span'); tag.textContent = 'v5';
-      const btn = document.createElement('button'); btn.setAttribute('aria-label', 'More Options');
+      const btn = document.createElement('button'); btn.setAttribute('aria-label', 'More options');
       btn.textContent = '...';
       row.append(cover, title, tag, btn); rows.append(row);
     }
@@ -301,17 +317,30 @@ box.addEventListener('scroll', () => {
   if (cfg.paging === 'scroll' && box.scrollTop + box.clientHeight > box.scrollHeight - 100) setTimeout(load, 300);
 });
 more.addEventListener('click', load);
+// Next page stays enabled on the last page, where it does nothing (as on suno.com)
+document.getElementById('pager').hidden = cfg.paging !== 'pages';
+document.getElementById('nextpage').addEventListener('click', load);
+prev.addEventListener('click', () => { if (page > 1) { page -= 2; hasMore = true; load(); } });
 setTimeout(load, 400);
 """
 
 SONG_BODY = """
+<div class="cover"><img alt=""> <button aria-label="Download cover image" data-never="cover">&#8615;</button></div>
 <h1>__TITLE__</h1>
 <div class="artist">__ARTIST__</div>
 <div><button aria-label="Like">Like</button> <button aria-label="__MORE__" id="more">...</button></div>
 <div role="menu" id="menu" hidden>
-  <div role="menuitem">Remix/Edit</div>
+  <div role="menuitem">Remix</div>
+  <div role="menuitem">Edit</div>
+  <div role="menuitem">Publish</div>
+  <div role="menuitem">Share</div>
+  <div role="menuitem" id="dl" __DISABLED__>Download</div>
+  <div role="menuitem">Manage</div>
+  <div role="menuitem">Add to Queue</div>
   <div role="menuitem">Add to Playlist</div>
-  <div role="menuitem" id="dl" __DISABLED__>Download &rsaquo;</div>
+  <div role="menuitem">Song Radio</div>
+  <div role="menuitem">Report</div>
+  <div role="menuitem" data-never="trash">Move to Trash</div>
 </div>
 <div role="menu" id="sub" hidden style="margin-left: 160px">
   <div role="menuitem" data-fmt="mp3">MP3 Audio</div>
@@ -322,7 +351,7 @@ SONG_BODY = """
 __LYRICS__
 <aside id="similar" style="position: absolute; top: 10px; left: 760px; width: 300px; height: 360px; overflow-y: auto;
   border: 1px solid #999"><b>Similar</b>__SIMILAR__</aside>
-<section><h3>Comments</h3><div>Nice! <button aria-label="More Options">...</button></div></section>
+<section><h3>Comments</h3><div>Nice! <button aria-label="More options">...</button></div></section>
 <div class="player">Now playing: <a href="/song/__STRAY__">Bài đang phát</a></div>
 """
 
@@ -338,37 +367,51 @@ const openSub = () => { if (cfg.ui === 'menu' && dl.getAttribute('aria-disabled'
 dl.addEventListener('mouseenter', openSub);
 dl.addEventListener('click', () => (cfg.ui === 'box' ? openBox() : openSub()));
 function el(tag, text) { const e = document.createElement(tag); if (text != null) e.textContent = text; return e; }
+const ICON = '<svg width="12" height="12" aria-hidden="true"><path d="M1 6l3 3 7-7"/></svg>';
+for (const b of document.querySelectorAll('[data-never]')) b.addEventListener('click', () => {
+  fetch('/api/pressed?what=' + b.dataset.never, {method: 'POST'});
+});
 function openBox() {  // suno.com, October 2026: the download box
   if (dl.getAttribute('aria-disabled') === 'true') return;
   menu.hidden = sub.hidden = true;
-  let chosen = 'mp3';
-  const close = el('button', '×'); close.setAttribute('aria-label', 'Close'); close.onclick = () => { dlg.hidden = true; };
+  const chosen = new Set(['mp3']);  // several rows can be chosen; every chosen format is downloaded
+  const close = el('button'); close.setAttribute('aria-label', 'Close'); close.innerHTML = ICON;
+  close.onclick = () => { dlg.hidden = true; };
   const rows = [['m4a', 'M4A'], ['mp3', 'MP3'], ['wav', 'WAV'], ['video', 'MP4 video asset']].map(([f, label]) => {
-    const b = el('button', label); b.className = 'fmt'; b.dataset.f = f;
-    b.onclick = () => { chosen = f; paint(); };
+    const b = el('button'); b.append(el('span', label)); b.className = 'fmt'; b.dataset.f = f;
+    b.onclick = () => { if (!chosen.delete(f)) chosen.add(f); paint(); };
     return b;
   });
-  const stems = el('div', 'Stems & MIDI '); stems.append(el('button', 'Manage'));
-  function paint() {
+  const manage = el('button'); manage.innerHTML = ICON + '<span>Manage</span>';  // (its own icon)
+  manage.onclick = () => fetch('/api/pressed?what=manage', {method: 'POST'});
+  const stems = el('div'); stems.append(el('span', 'Stems & MIDI'), manage);
+  function paint() {  // the check mark on a chosen row is all that tells (no aria- attribute, as on suno.com)
     for (const b of rows) {
-      const on = b.dataset.f === chosen;
+      const on = chosen.has(b.dataset.f);
       b.style.background = on ? '#eee8d5' : '';
       const mark = b.querySelector('svg'); if (mark) mark.remove();
-      if (on) b.insertAdjacentHTML('beforeend', '<svg width="12" height="12" aria-hidden="true"><path d="M1 6l3 3 7-7"/></svg>');
+      if (on) b.insertAdjacentHTML('beforeend', ICON);
       if (cfg.aria) b.setAttribute('aria-pressed', String(on));
     }
   }
   const go = el('button', cfg.unlocked ? 'Download' : 'Unlock & Download');
   const plan = el('div');
-  plan.append(el('span', 'Plan'), el('b', 'Premier'), el('span', 'Downloads'),
-              el('b', cfg.left == null ? 'Unlimited' : String(cfg.left)), el('span', 'Refreshes'), el('b', '11/28/26'));
+  if (cfg.unlocked) {
+    plan.append(el('span', "You've unlocked this song. You can return and download at any time. "));
+    const more = el('a', 'Learn more.'); more.href = '/blog/suno-updates-tos'; plan.append(more);
+  } else {
+    plan.append(el('span', 'Plan'), el('b', 'Premier'), el('span', 'Downloads'),
+                el('b', cfg.left == null ? 'Unlimited' : String(cfg.left)), el('span', 'Refreshes'), el('b', '11/28/26'));
+  }
   go.onclick = () => {
-    if (chosen !== 'wav' && chosen !== 'mp3') return;
+    const fmts = ['mp3', 'wav'].filter(f => chosen.has(f));
+    if (!fmts.length) return;
     go.disabled = true; go.textContent = 'Preparing...';
-    fetch(`/api/download/${cfg.id}?fmt=${chosen}`, {method: 'POST'}).then(r => r.json()).then(j => {
-      if (j.limit) { limitBox(); return; }
-      setTimeout(() => deliver(chosen), cfg.prepare_ms);
-    });
+    Promise.all(fmts.map(f => fetch(`/api/download/${cfg.id}?fmt=${f}`, {method: 'POST'}).then(r => r.json())))
+      .then(answers => {
+        if (answers.some(j => j.limit)) { limitBox(); return; }
+        fmts.forEach((f, i) => setTimeout(() => deliver(f), cfg.prepare_ms + i * 300));
+      });
   };
   dlg.replaceChildren(close, el('h2', `Download '${cfg.title}'`), ...rows, stems, go, plan);
   paint();

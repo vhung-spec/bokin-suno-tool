@@ -4,8 +4,9 @@ Tool tải **các bài nhạc trong một workspace Suno** về một thư mục
 chỉ tải các bài mới. Tool chạy trên **Windows** hoặc **Linux** (máy tính hoặc VPS).
 
 Tool **không dùng API**. Nó mở một Chrome thật đã đăng nhập Suno rồi làm đúng các bước một người làm: mở workspace,
-rồi với từng bài bấm **⋯ → Download**, trong hộp *Download 'tên bài'* chọn **WAV** rồi bấm **Unlock & Download**
-(giao diện Suno từ tháng 10/2026; cách cũ ⋯ → Download → WAV Audio → Download File vẫn chạy).
+rồi với từng bài bấm **⋯ → Download**, trong hộp *Download 'tên bài'* chọn **WAV**, bỏ chọn MP3 (Suno chọn sẵn
+MP3 và cho chọn nhiều dòng một lúc), rồi bấm **Unlock & Download** (giao diện Suno từ tháng 10/2026; cách cũ ⋯ →
+Download → WAV Audio → Download File vẫn chạy).
 - Hộp Download ghi số lượt tải còn lại của gói (*Downloads 59*). Khi hộp ghi **Downloads 0**, tool dừng, không bấm gì.
 
 ## Cần biết trước
@@ -20,11 +21,11 @@ rồi với từng bài bấm **⋯ → Download**, trong hộp *Download 'tên 
   - Khi Suno báo hết lượt, tool **dừng lại**. Tool **không bao giờ bấm mua thêm**.
 - **Điều khoản của Suno không cho phép dùng công cụ tự động** trên trang. Tool đi chậm như người (mỗi bài vài
   giây). Dù vậy, rủi ro tài khoản bị nhắc nhở hoặc khoá **vẫn có**. Nên tải vừa phải.
-- **Tool chưa được thử trên suno.com thật.** Máy dùng để viết tool không vào được suno.com, nên tool được viết theo
-  giao diện Suno đã biết và thử trên một trang Suno giả lập. **Lần chạy đầu có thể cần sửa tool.**
+- **Tool đã được thử trên suno.com thật** (30/10/2026: xem danh sách và tải WAV). Suno đổi giao diện thì tool có thể
+  cần sửa lại.
   - Khi gặp lỗi, tool chụp màn hình và lưu một file `.html` trong `data/logs`.
   - Gửi hai file đó cho người sửa tool. Trước khi gửi, **che tên tài khoản và email** trong ảnh.
-  - Suno đổi giao diện về sau cũng vậy: tool báo lỗi và chụp màn hình, không làm gì sai trên tài khoản.
+  - Khi Suno đổi giao diện, tool báo lỗi và chụp màn hình, không làm gì sai trên tài khoản.
 
 ## Cài đặt trên Windows
 
