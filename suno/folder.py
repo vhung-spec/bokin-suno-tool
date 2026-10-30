@@ -17,7 +17,7 @@ from pathlib import Path
 
 LIST_NAME = "danh-sach.csv"
 COLUMNS = ("ten_bai", "file", "trang_thai", "ghi_chu", "dinh_dang", "link", "luc", "id")
-DONE, FAILED = "xong", "loi"
+DONE, FAILED, NOT_MINE = "xong", "loi", "nguoi_khac"  # nguoi_khac: someone else's song, never downloaded
 WINDOWS_RESERVED = {"con", "prn", "aux", "nul"} | {f"{p}{n}" for p in ("com", "lpt") for n in range(1, 10)}
 NAME_MAX = 80
 
@@ -95,6 +95,9 @@ class Folder:
     def done(self, song_id, fmt):
         return (self.rows.get((song_id, fmt)) or {}).get("trang_thai") == DONE
 
+    def not_mine(self, song_id):
+        return any(sid == song_id and r["trang_thai"] == NOT_MINE for (sid, _), r in self.rows.items())
+
     def failed(self, fmt):
         """(id, title) of the songs that failed before, to try again."""
         return [(sid, r.get("ten_bai", "")) for (sid, f), r in self.rows.items()
@@ -127,6 +130,9 @@ class Folder:
 
     def add_failure(self, song, fmt, note):
         self._set(song, fmt, song.title, FAILED, note=note)
+
+    def add_not_mine(self, song, fmt, note):
+        self._set(song, fmt, song.title, NOT_MINE, note=note)
 
     def _set(self, song, fmt, title, status, file="", note=""):
         self.rows[(song.id, fmt)] = {"ten_bai": title, "file": file, "trang_thai": status, "ghi_chu": note,

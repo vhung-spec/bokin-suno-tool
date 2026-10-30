@@ -5,7 +5,8 @@ it scrolls, a few songs first (--limit), then the rest with a song still being m
 a second run that reads only the top of the list yet tries the unfinished song again, the lyrics kept next to each
 song (none for an instrumental), MP3 through a "uses 1 download" box opening in a new tab, several links at once (one
 of them bad), a Load more button, the Stop button of Bokin Suno Studio, a Suno page
-without window.Clerk (only Clerk's cookies tell who is signed in), the plan's downloads used up (nothing
+without window.Clerk (only Clerk's cookies tell who is signed in), share links (suno.com/s/...: the one song, never
+the Similar list beside it), someone else's song (never downloaded), the plan's downloads used up (nothing
 bought), a changed Suno page, the wrong account, a sign-out, removing the account.
 
   python tests/test_suno.py [--headless] [--chrome PATH] [--keep]
@@ -214,6 +215,29 @@ def main():
         del env["BOKIN_SUNO_STOP"]
         check(stop_later not in {r["id"] for r in read_list(nhac)}, "nothing downloaded once stopped")
         fake.workspace.remove(stop_later)
+
+        print("== a share link (suno.com/s/...) to one of the account's songs: that song only, not the Similar list")
+        code = fake.add_share(ids[3])
+        out = cli("list", "suno1", f"{fake.url}/s/{code}", contains="Có 1 bài")
+        check(ids[3] in out and not any(s in out for s in fake.similar), "the shared song, none of the Similar list")
+        picked = len(fake.picked)
+        out = cli("download", "suno1", f"{fake.url}/s/{code}", "--out", str(tmp / "chia-se"), contains="1 bài tải xong")
+        check([s for s, _ in fake.picked[picked:]] == [ids[3]], "only the shared song downloaded")
+
+        print("== someone else's song (a Follow button by its artist): never downloaded")
+        theirs = fake.add_song("Bài người khác", owner="other")
+        picked, counted = len(fake.picked), len(fake.counted)
+        cli("download", "suno1", link, "--out", str(nhac), contains="1 bài của người khác (bỏ qua)")
+        check(len(fake.picked) == picked and len(fake.counted) == counted, "nothing pressed, no download used")
+        row = [r for r in read_list(nhac) if r["id"] == theirs]
+        check(row and row[0]["trang_thai"] == "nguoi_khac", "listed as someone else's song")
+        cli("download", "suno1", link, "--out", str(nhac), contains="0 bài cần tải")
+        check(len(fake.picked) == picked, "not tried again")
+        code = fake.add_share(fake.similar[0])
+        cli("download", "suno1", f"{fake.url}/s/{code}", "--out", str(tmp / "chia-se"),
+            contains="1 bài của người khác (bỏ qua)")
+        check(fake.similar[0] not in fake.counted, "a share link to someone else's song: nothing downloaded")
+        fake.workspace.remove(theirs)
 
         print("== the plan's downloads used up")
         fake.config["downloads_left"] = 1

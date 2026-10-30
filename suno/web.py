@@ -38,6 +38,9 @@ SEL = {
     "text_format": {"wav": re.compile(r"\bwav\b", re.I), "mp3": re.compile(r"\bmp3\b", re.I)},
     "text_go": re.compile(r"^(download( file| wav| mp3| audio| song)?|continue|confirm)$", re.I),
     "text_buy": re.compile(r"\b(buy|purchase|upgrade|subscribe|payment|checkout)\b|[$€£₫]\s?\d", re.I),
+    # a song page with a Follow button is someone else's song (suno.com shows none on the account's own songs):
+    # never downloaded, it would use up one of the plan's downloads for nothing
+    "text_follow": re.compile(r"^(follow|following|unfollow)$", re.I),
     "text_limit": re.compile(r"\b(limit|out of downloads|no downloads|0 downloads|downloads? (left|remaining))\b", re.I),
 }
 
@@ -105,7 +108,8 @@ JS_LYRICS = r"""(sel) => {
 
 
 class SunoError(Exception):
-    """A step on suno.com failed. code: not_signed_in, wrong_account, no_songs, not_ready, limit, stuck."""
+    """A step on suno.com failed. code: not_signed_in, wrong_account, no_songs, not_ready, limit, stuck, not_mine
+    (someone else's song: skipped, nothing pressed)."""
 
     def __init__(self, code, message):
         super().__init__(message)
@@ -336,15 +340,32 @@ def wait_for_login(context, log, settle_seconds=None, limit_minutes=30):
 
 # ---- the songs of a workspace ----
 
+def _share_link(url):
+    """suno.com/s/<code>: a share link, which Suno turns into a song's (or a playlist's) own address."""
+    return bool(re.match(r"/s/[^/]+/?$", urlparse(url).path))
+
+
 def list_songs(page, url, log, known=None, known_in_a_row=None, limit_minutes=20):
-    """The songs shown at `url` (a workspace, playlist or song link), in the order shown. With known(id) and
-    known_in_a_row, reading stops once that many songs in a row are known: Suno lists the newest songs first, so a
-    second run reads only the top of a large workspace."""
+    """The songs shown at `url` (a workspace, playlist or song link, or a share link to one), in the order shown.
+    A link that opens one song's page gives that song alone: the other song links on such a page (Similar, the
+    artist's other songs) are other people's songs. With known(id) and known_in_a_row, reading stops once that many
+    songs in a row are known: Suno lists the newest songs first, so a second run reads only the top of a large
+    workspace."""
     page.goto(url, wait_until="domcontentloaded", timeout=90_000)
+    if _share_link(url):  # Suno sends a share link on to the song's page, at once or from the page's script
+        end = time.monotonic() + 30
+        while _share_link(page.url) and time.monotonic() < end:
+            page.wait_for_timeout(300)
+        if _share_link(page.url):
+            raise SunoError("no_songs", "Link chia sẻ này không mở ra bài hay playlist nào. Mở workspace trên suno.com "
+                                        "rồi chép link trên thanh địa chỉ (dạng https://suno.com/create?wid=...)")
+        log.info("Link chia sẻ dẫn tới: %s", urlparse(page.url).path)
     if page_state(page)[0] != "in":
         raise SunoError("not_signed_in", "Tài khoản Suno chưa đăng nhập hoặc đã bị đăng xuất. Chạy lại: suno login <tên>")
-    one = song_id_of(url)
+    one = song_id_of(page.url) or song_id_of(url)
     if one:
+        if _share_link(url) or not song_id_of(url):
+            log.info("Link này là link của một bài (không phải workspace): chỉ tải đúng bài đó")
         return [Song(one, "")]
     try:
         page.locator(SEL["song_link"]).first.wait_for(state="attached", timeout=30_000)
@@ -441,6 +462,33 @@ def song_lyrics(page):
         return ""
 
 
+def _someone_elses(page):
+    """Is this song page someone else's song? suno.com puts a Follow button by the artist's name, under the song's
+    title, on other people's songs only. Only buttons near the title count (a list of other songs on the page may
+    have its own)."""
+    title = page.locator(SEL["song_title"]).first
+    try:
+        box = title.bounding_box() if _visible(title) else None
+    except Exception:
+        box = None
+    for b in page.locator('button, [role="button"]').all():
+        if not _visible(b):
+            continue
+        label = _text(b) or (b.get_attribute("aria-label") or "")
+        if not SEL["text_follow"].search(label):
+            continue
+        if box is None:
+            return True
+        try:
+            at = b.bounding_box()
+        except Exception:
+            at = None
+        if at and box["y"] - 40 <= at["y"] <= box["y"] + box["height"] + 260 and \
+                box["x"] - 80 <= at["x"] <= box["x"] + max(box["width"], 300) + 500:
+            return True
+    return False
+
+
 def _open_format_item(page, fmt):
     """More options → Download → WAV/MP3; returns the format item, ready to click."""
     more = page.locator(SEL["more"]).first
@@ -448,6 +496,8 @@ def _open_format_item(page, fmt):
         more.wait_for(state="visible", timeout=15_000)
     except Exception:
         raise SunoError("stuck", "Không thấy nút More options (⋯) ở trang bài hát")
+    if _someone_elses(page):
+        raise SunoError("not_mine", "Bài của người khác (cạnh tên bài có nút Follow): bỏ qua, không bấm tải")
     want = SEL["text_format"][fmt]
 
     def format_item():
@@ -509,6 +559,8 @@ def download_song(page, catcher, song, fmt, dest, log, timeout_seconds=300):
     try:
         item = _open_format_item(page, fmt)
     except SunoError as e:
+        if e.code == "not_mine" and not song.title:
+            song.title = _song_title(page)  # (for danh-sach.csv)
         if e.code == "stuck" and page_state(page, wait_seconds=5)[0] != "in":
             raise SunoError("not_signed_in", "Tài khoản Suno đã bị đăng xuất. Chạy lại: suno login <tên>")
         raise

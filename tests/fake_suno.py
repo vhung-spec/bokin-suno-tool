@@ -7,7 +7,9 @@ scrolling list that loads more as it scrolls (or by a Load more button) and drop
 bar with a link to a song not in the workspace, More Options → Download → MP3 Audio / WAV Audio, the WAV box that
 prepares the file before its Download File button works, an optional "uses 1 download" box for MP3, the box saying
 the plan's downloads are used up, with a Buy button that must never be pressed, song pages that fail once
-(`fail_once`), and the lyrics on a song page (none for an instrumental). Files arrive as a download
+(`fail_once`), the lyrics on a song page (none for an instrumental), and as on suno.com: share links (/s/<code>,
+which the page's script sends on to the song's page), a Similar list of other people's songs beside every song, and
+on other people's songs a Follow button by the artist's name. Files arrive as a download
 (from a blob or a link) or open in a new tab, as `config["delivery"]` says. Like Suno, a song counts as one download
 whatever the format and however often it is downloaded.
 """
@@ -59,6 +61,8 @@ class FakeSuno:
         self.list_pages = []  # the pages of the workspace's list that were asked for
         self.lock = threading.Lock()
         self.stray = self.add_song("Bài đang phát", in_workspace=False)
+        self.shares = {}  # share code -> song id
+        self.similar = [self.add_song(f"Bài tương tự {n}", in_workspace=False, owner="other") for n in range(1, 7)]
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), self._handler())
         self.url = f"http://127.0.0.1:{self.server.server_address[1]}"
 
@@ -69,11 +73,16 @@ class FakeSuno:
     def stop(self):
         self.server.shutdown()
 
-    def add_song(self, title, status="complete", in_workspace=True, lyrics=None):
+    def add_share(self, song_id):
+        code = secrets.token_urlsafe(12)
+        self.shares[code] = song_id
+        return code
+
+    def add_song(self, title, status="complete", in_workspace=True, lyrics=None, owner="me"):
         sid = str(uuid.uuid4())
         if lyrics is None:
             lyrics = default_lyrics(title)
-        self.songs[sid] = {"title": title, "status": status, "lyrics": lyrics}
+        self.songs[sid] = {"title": title, "status": status, "lyrics": lyrics, "owner": owner}
         if in_workspace:
             self.workspace.insert(0, sid)  # newest first, as Suno lists them
         return sid
@@ -125,6 +134,12 @@ class FakeSuno:
                                       f"setTimeout(() => {{ if (!document.cookie.includes('__client_uat=1') && {auto}) "
                                       f"location.href = "
                                       f"'/sign-in'; }}, 500);")
+                if len(parts) == 2 and parts[0] == "s":
+                    target = fake.shares.get(parts[1])
+                    if not target:
+                        return self._send(404, "not found")
+                    return self._send(200, f"<!doctype html><title>Suno</title><p>Opening...</p><script>setTimeout("
+                                           f"() => location.replace('/song/{target}'), 400)</script>")
                 if len(parts) == 2 and parts[0] in ("files", "cdn"):
                     sid, _, fmt = parts[1].rpartition(".")
                     if sid not in fake.songs or fmt not in ("wav", "mp3"):
@@ -154,7 +169,13 @@ class FakeSuno:
                     song = fake.songs[parts[1]]
                     cfg = json.dumps({"id": parts[1], "title": song["title"], "delivery": fake.config["delivery"],
                                       "confirm": fake.config["confirm"], "prepare_ms": fake.config["prepare_ms"]})
+                    similar = "".join(
+                        f'<div class="row"><a href="/song/{s}">{html.escape(fake.songs[s]["title"])}</a>'
+                        f'<button aria-label="More Options">...</button></div>' for s in fake.similar)
+                    artist = ("Bokin" if song["owner"] == "me" else "Dr. Someone Else") + (
+                        "" if song["owner"] == "me" else ' <button class="follow">Follow</button>')
                     body = (SONG_BODY.replace("__TITLE__", html.escape(song["title"]))
+                            .replace("__ARTIST__", artist).replace("__SIMILAR__", similar)
                             .replace("__MORE__", html.escape(fake.config["more_label"]))
                             .replace("__DISABLED__", "" if song["status"] == "complete" else 'aria-disabled="true"')
                             .replace("__STRAY__", fake.stray)
@@ -279,6 +300,7 @@ setTimeout(load, 400);
 
 SONG_BODY = """
 <h1>__TITLE__</h1>
+<div class="artist">__ARTIST__</div>
 <div><button aria-label="Like">Like</button> <button aria-label="__MORE__" id="more">...</button></div>
 <div role="menu" id="menu" hidden>
   <div role="menuitem">Remix/Edit</div>
@@ -292,6 +314,8 @@ SONG_BODY = """
 </div>
 <div role="dialog" id="dlg" hidden></div>
 __LYRICS__
+<aside id="similar" style="position: absolute; top: 10px; left: 760px; width: 300px; height: 360px; overflow-y: auto;
+  border: 1px solid #999"><b>Similar</b>__SIMILAR__</aside>
 <section><h3>Comments</h3><div>Nice! <button aria-label="More Options">...</button></div></section>
 <div class="player">Now playing: <a href="/song/__STRAY__">Bài đang phát</a></div>
 """

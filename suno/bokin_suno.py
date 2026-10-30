@@ -43,7 +43,7 @@ ROOT = Path(__file__).resolve().parent.parent
 ACCOUNT_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,39}")
 STUCK_IN_A_ROW = 3  # songs failing one after another like this: Suno's page has most likely changed
 KNOWN_IN_A_ROW = int(os.environ.get("BOKIN_SUNO_KNOWN_STREAK") or 50)  # stop reading a list here (tests: fewer)
-NO_RETRY = ("limit", "not_signed_in", "wrong_account", "not_ready")
+NO_RETRY = ("limit", "not_signed_in", "wrong_account", "not_ready", "not_mine")
 PACE_SECONDS = 1.5  # between songs: a person's pace, not a burst
 SIZE_GUESS = {"wav": 60_000_000, "mp3": 8_000_000}  # bytes per song, for the free-space check
 log = logging.getLogger("suno")
@@ -142,6 +142,8 @@ def browser(args, data, name, headless):
     from patchright.sync_api import sync_playwright
     kw = dict(user_data_dir=str(data.profile(name)), headless=headless, no_viewport=True, locale="en-US",
               accept_downloads=True, args=["--lang=en-US", "--window-size=1366,900", "--password-store=basic"])
+    if sys.platform == "win32":
+        kw["chromium_sandbox"] = True  # Chrome's own protection, as a person's Chrome has (no --no-sandbox bar)
     chrome = args.chrome or os.environ.get("BOKIN_SUNO_CHROME")
     if chrome:
         kw["executable_path"] = chrome
@@ -401,13 +403,14 @@ def cmd_download(args, data):
     except folder.FolderError as e:
         raise UserError(str(e))
     started = time.monotonic()
-    done = failed = size = 0
+    done = failed = others = size = 0
     stopped = ""
     with single_run(data), browser(args, data, name, args.headless) as context:
         page = first_page(context)
-        songs, bad = gather_songs(data, page, name, account, links, lambda sid: out.done(sid, fmt),
+        songs, bad = gather_songs(data, page, name, account, links,
+                                  lambda sid: out.done(sid, fmt) or out.not_mine(sid),
                                   None if args.full else KNOWN_IN_A_ROW)
-        todo = [s for s in songs if not out.done(s.id, fmt)]
+        todo = [s for s in songs if not out.done(s.id, fmt) and not out.not_mine(s.id)]
         log.info("Đọc được %d bài: %d bài đã tải từ trước, %d bài cần tải %s vào %s", len(songs),
                  len(songs) - len(todo), len(todo), fmt.upper(), out.root)
         listed = {s.id for s in songs}
@@ -432,6 +435,13 @@ def cmd_download(args, data):
             except Exception as e:
                 log.debug("download failed", exc_info=True)
                 note = describe(e)
+                if getattr(e, "code", "") == "not_mine":
+                    log.warning("%s: %s", label, note)
+                    others += 1
+                    stuck = 0
+                    with contextlib.suppress(folder.FolderError):
+                        out.add_not_mine(song, fmt, note)  # never tried again
+                    continue
                 log.error("%s: %s", label, note)
                 failed += 1
                 stopped = stop_reason(e, page)
@@ -458,7 +468,8 @@ def cmd_download(args, data):
             page.wait_for_timeout(PACE_SECONDS * 1000)
     if stopped:
         log.error("Đã dừng: %s", stopped)
-    log.info("Tổng: %d bài tải xong, %d bài lỗi (%s trong %s). Danh sách: %s", done, failed, human_size(size),
+    log.info("Tổng: %d bài tải xong, %d bài lỗi%s (%s trong %s). Danh sách: %s", done, failed,
+             f", {others} bài của người khác (bỏ qua)" if others else "", human_size(size),
              human_time(time.monotonic() - started), out.list_path)
     return 1 if failed or stopped or bad else 0
 

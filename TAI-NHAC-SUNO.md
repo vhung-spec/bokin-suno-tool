@@ -85,7 +85,9 @@ Trên Linux (VPS), lệnh `login` phải chạy trong **Remote Desktop**, xem *C
 2. Bấm vào thanh địa chỉ, **Ctrl+C** để chép link. Link có dạng `https://suno.com/create?wid=...`.
 3. Thử dán link đó vào một tab mới: phải mở ra **đúng workspace** với đúng các bài. Nếu không, tool cũng không thấy.
 
-Dùng link một **playlist** hoặc link **một bài** cũng được.
+Dùng link một **playlist** hoặc link **một bài** cũng được. Link chia sẻ (`suno.com/s/...`) là link của một bài:
+tool chỉ tải đúng bài đó. Bài của **người khác** (trang bài có nút Follow) tool luôn bỏ qua, không bấm tải, và ghi
+`nguoi_khac` vào `danh-sach.csv`.
 
 ## Bước 3: xem trước, rồi tải
 
