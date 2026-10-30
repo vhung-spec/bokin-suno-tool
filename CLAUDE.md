@@ -44,6 +44,11 @@
 - Suno giả lập phải đi cùng `SEL`: sửa selector thì sửa cả Suno giả lập và bài thử.
 - Chưa thử trên suno.com thật: máy chủ phiên làm việc không vào được suno.com; sửa `SEL` theo ảnh và file `.html` chủ
   gửi.
+- Theo ảnh chủ gửi (30/10/2026): ⋯ → Download mở hộp "Download 'tên bài'" (M4A, MP3 chọn sẵn, WAV, MP4 video asset,
+  Stems & MIDI; nút "Unlock & Download"; "Plan Premier · Downloads 59 · Refreshes 11/28/26"). Tool chọn dòng WAV rồi
+  bấm nút đó; "Downloads 0" thì dừng, không bấm. Bài của người khác có nút Follow cạnh tên tác giả: bỏ qua. Link
+  chia sẻ `suno.com/s/...` dẫn tới một bài; trang bài có cột Similar (bài người khác): không bao giờ đọc làm danh
+  sách. Suno giả lập có cả hai giao diện (`download_ui` "box"/"menu").
 - Lời bài hát: tải xong một bài, tool lưu lời đang hiện trên trang bài hát vào `Tên bài.txt` cạnh file nhạc
   (`web.JS_LYRICS`, `SEL["lyrics"]`; chưa thử trên suno.com thật). Một tên file (bỏ đuôi) thuộc về một bài.
 - Máy chủ phiên làm việc chỉ có Chromium của Playwright, không có Google Chrome: ở đó `tests/test_suno.py` hỏng từ

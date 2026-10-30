@@ -2,8 +2,10 @@
 
 No Suno API: the program does what a person does on suno.com. It opens the workspace (or playlist) link, reads the
 song links in its list while scrolling, then for each song opens the song's page, reads the lyrics it shows, and
-presses More options → Download → WAV Audio (or MP3 Audio), answers Suno's download box and keeps the file Chrome
-receives. Downloads go
+presses More options → Download. suno.com (October 2026, seen on the owner's computer) then opens a box "Download
+'<title>'" listing M4A, MP3, WAV, MP4 video asset, Stems & MIDI, with the plan's downloads left ("Downloads 59") and
+an "Unlock & Download" button: the program picks WAV (or MP3) there and presses that button. The older menu (Download
+→ WAV Audio, then a box with Download File) works too. The program keeps the file Chrome receives. Downloads go
 through Suno's own Download button, so Suno counts them exactly as when a person downloads by hand; when Suno says
 the plan's downloads are used up, the run stops. The program never presses a Buy/Upgrade button and never takes the
 audio any other way. Every selector and button text is in SEL. BOKIN_SUNO_URL points the program at a stand-in Suno
@@ -27,7 +29,9 @@ SEL = {
             'button[aria-label="More actions" i], button[aria-label="More" i]',
     "menu_item": '[role="menuitem"], [role="menu"] button, [data-radix-popper-content-wrapper] button, '
                  '[data-radix-popper-content-wrapper] [role="button"]',
-    "dialog": '[role="dialog"], [role="alertdialog"]',
+    "dialog": '[role="dialog"], [role="alertdialog"], [aria-modal="true"]',
+    # the rows of the download box's list of formats (M4A, MP3, WAV, MP4 video asset, Stems & MIDI)
+    "dialog_option": 'button, [role="radio"], [role="option"], [role="menuitemradio"], [role="checkbox"], label, li',
     "dialog_button": 'button, a[href], [role="button"]',
     "song_title": "h1",
     # the lyrics on a song page: these first, else the longest multi-line text shown with its line breaks kept
@@ -36,7 +40,13 @@ SEL = {
     # button and box texts (English UI)
     "text_download": re.compile(r"^download\b", re.I),
     "text_format": {"wav": re.compile(r"\bwav\b", re.I), "mp3": re.compile(r"\bmp3\b", re.I)},
-    "text_go": re.compile(r"^(download( file| wav| mp3| audio| song)?|continue|confirm)$", re.I),
+    # a row of the download box: exactly the format's name (not "MP4 video asset", "M4A")
+    "text_dialog_format": {"wav": re.compile(r"^wav( audio)?$", re.I), "mp3": re.compile(r"^mp3( audio)?$", re.I)},
+    "text_go": re.compile(r"^(download( file| wav| mp3| audio| song)?|unlock\s*(&|and)\s*download|continue|confirm)$",
+                          re.I),
+    # the download box's count of the plan's downloads left, at 0: nothing is pressed (its words may run together:
+    # "PremierDownloads0Refreshes")
+    "text_none_left": re.compile(r"downloads\s*:?\s*0(?![\d.,/])", re.I),
     "text_buy": re.compile(r"\b(buy|purchase|upgrade|subscribe|payment|checkout)\b|[$€£₫]\s?\d", re.I),
     # a song page with a Follow button is someone else's song (suno.com shows none on the account's own songs):
     # never downloaded, it would use up one of the plan's downloads for nothing
@@ -489,8 +499,33 @@ def _someone_elses(page):
     return False
 
 
+def _dialog_format(page, fmt):
+    """The format's row in Suno's download box (Download 'title': M4A, MP3, WAV...), or None."""
+    want = SEL["text_dialog_format"][fmt]
+    for box in page.locator(SEL["dialog"]).all():
+        if not _visible(box):
+            continue
+        for row in box.locator(SEL["dialog_option"]).all():
+            if _visible(row) and want.search(_text(row)):
+                return row
+    return None
+
+
+def _chosen(row):
+    """Is this row of the download box the chosen one? None when the page does not say (no such attribute)."""
+    for name in ("aria-checked", "aria-selected", "aria-pressed", "data-state", "data-selected", "data-checked"):
+        try:
+            value = row.get_attribute(name)
+        except Exception:
+            value = None
+        if value is not None:
+            return value.lower() in ("true", "checked", "on", "active", "selected", "")
+    return None
+
+
 def _open_format_item(page, fmt):
-    """More options → Download → WAV/MP3; returns the format item, ready to click."""
+    """More options → Download → WAV/MP3 (the format's row in the download box, or in the older menu); returns it,
+    ready to click."""
     more = page.locator(SEL["more"]).first
     try:
         more.wait_for(state="visible", timeout=15_000)
@@ -503,8 +538,11 @@ def _open_format_item(page, fmt):
     def format_item():
         return _find_text(page, SEL["menu_item"], want)
 
+    def format_anywhere():
+        return format_item() or _dialog_format(page, fmt)
+
     def menu():
-        item = format_item()
+        item = format_anywhere()
         if item:
             return "item", item
         down = _find_text(page, SEL["menu_item"], SEL["text_download"])
@@ -521,8 +559,8 @@ def _open_format_item(page, fmt):
             loc.hover()
             item = _poll(page, format_item, 1500)
             if not item:
-                loc.click()
-                item = _poll(page, format_item, 2000)
+                loc.click()  # (the download box opens on a click)
+                item = _poll(page, format_anywhere, 5000)
             if item:
                 return item
         page.keyboard.press("Escape")
@@ -542,6 +580,9 @@ def _answer_dialog(page, clicked):
             label = _text(b) or (b.get_attribute("aria-label") or "")
             if SEL["text_go"].search(label):
                 go.append((label, b))
+        if SEL["text_none_left"].search(text):
+            raise SunoError("limit", "Hộp Download của Suno ghi Downloads 0: hết lượt tải của gói (tới ngày làm mới "
+                                     "ghi trong hộp). Tool dừng, không bấm gì")
         if SEL["text_buy"].search(text) or (SEL["text_limit"].search(text) and not go):
             raise SunoError("limit", f"Suno báo hết lượt tải của gói: \"{text[:160]}\". Tool dừng, không mua thêm")
         for label, b in go:
@@ -570,6 +611,19 @@ def download_song(page, catcher, song, fmt, dest, log, timeout_seconds=300):
         raise SunoError("not_ready", f"Suno chưa cho tải bài này dạng {fmt.upper()} (bài chưa tạo xong hoặc bị lỗi)")
     item.click()
     clicked = {}
+    if _dialog_format(page, fmt) is not None:  # the download box: the format's row must be the chosen one first
+
+        def chosen():
+            row = _dialog_format(page, fmt)
+            return row is not None and _chosen(row) is not False  # (no attribute to tell: taken as chosen)
+
+        if not _poll(page, chosen, 1500):
+            row = _dialog_format(page, fmt)
+            if row is not None:
+                row.click()
+            if not _poll(page, chosen, 2000):
+                raise SunoError("stuck", f"Không chọn được dòng {fmt.upper()} trong hộp Download của Suno")
+        page.wait_for_timeout(300)
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
         if catcher.downloads:

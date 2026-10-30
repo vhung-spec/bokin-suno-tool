@@ -180,8 +180,8 @@ def main():
         check("dừng đọc danh sách" not in out and f"Đọc được {len(fake.workspace)} bài" in out, "--full reads it all")
         check(len(fake.picked) == picked, "nothing downloaded twice")
 
-        print("== MP3, a 'uses 1 download' box, the file opening in a new tab")
-        fake.config.update(confirm=True, delivery="newtab")
+        print("== the older menu (Download → MP3 Audio), a 'uses 1 download' box, the file opening in a new tab")
+        fake.config.update(confirm=True, delivery="newtab", download_ui="menu")
         mp3 = tmp / "mp3"
         counted = len(fake.counted)
         cli("download", "suno1", link, "--out", str(mp3), "--format", "mp3", "--limit", "3", contains="3 bài tải xong")
@@ -189,7 +189,14 @@ def main():
         check(len(got) == 3, "three MP3 files")
         check(all(p.read_bytes()[:3] == b"ID3" for p in got), "they are MP3")
         check(len(fake.counted) == counted, "songs already downloaded as WAV count no more")
-        fake.config.update(confirm=False, delivery="attach")
+        fake.config.update(confirm=False, delivery="attach", download_ui="box")
+
+        print("== the download box whose rows say which is chosen (aria-pressed): WAV chosen before Unlock & Download")
+        fake.config["box_aria"] = True
+        aria = [fake.add_song("Hàng có aria 1"), fake.add_song("Hàng có aria 2")]
+        cli("download", "suno1", link, "--out", str(nhac), contains="2 bài tải xong")
+        check(all((s, "wav") in fake.picked for s in aria), "WAV downloaded through the box")
+        fake.config["box_aria"] = False
 
         print("== several links at once, one of them bad")
         one = tmp / "vai-bai"
@@ -242,10 +249,16 @@ def main():
         print("== the plan's downloads used up")
         fake.config["downloads_left"] = 1
         later = [fake.add_song("Hết lượt 1"), fake.add_song("Hết lượt 2")]
-        cli("download", "suno1", link, "--out", str(nhac), expect=1, contains="hết lượt tải")
+        cli("download", "suno1", link, "--out", str(nhac), expect=1, contains="Downloads 0")
         rows = {r["id"] for r in read_list(nhac)}
         check(later[1] in rows and later[0] not in rows, "the one allowed download made, then stopped")
+        check(later[0] not in [s for s, _ in fake.picked], "the box said Downloads 0: nothing pressed")
         check(fake.buy_clicks == 0, "nothing bought")
+        print("== the plan's downloads used up, the older menu: Suno's box with a Buy button")
+        fake.config["download_ui"] = "menu"
+        cli("download", "suno1", link, "--out", str(nhac), expect=1, contains="hết lượt tải")
+        check(later[0] not in {r["id"] for r in read_list(nhac)} and fake.buy_clicks == 0, "stopped, nothing bought")
+        fake.config["download_ui"] = "box"
         fake.config["downloads_left"] = None
 
         print("== Suno's page changed")

@@ -9,7 +9,11 @@ prepares the file before its Download File button works, an optional "uses 1 dow
 the plan's downloads are used up, with a Buy button that must never be pressed, song pages that fail once
 (`fail_once`), the lyrics on a song page (none for an instrumental), and as on suno.com: share links (/s/<code>,
 which the page's script sends on to the song's page), a Similar list of other people's songs beside every song, and
-on other people's songs a Follow button by the artist's name. Files arrive as a download
+on other people's songs a Follow button by the artist's name. Downloading, as on suno.com in October 2026
+(config["download_ui"] "box", the default): More Options → Download opens a box "Download '<title>'" with rows M4A,
+MP3 (chosen at first), WAV, MP4 video asset, Stems & MIDI, a checkmark on the chosen row (and aria-pressed only with
+config["box_aria"]), the plan's downloads left and an "Unlock & Download" button ("Download" once the song has been
+downloaded). config["download_ui"] "menu" is the older menu: Download → WAV Audio / MP3 Audio and its boxes. Files arrive as a download
 (from a blob or a link) or open in a new tab, as `config["delivery"]` says. Like Suno, a song counts as one download
 whatever the format and however often it is downloaded.
 """
@@ -49,7 +53,7 @@ class FakeSuno:
     def __init__(self):
         self.config = {"auto_signin": True, "user_id": USER_ID, "delivery": "blob", "confirm": False,
                        "downloads_left": None, "paging": "scroll", "prepare_ms": 800, "more_label": "More Options",
-                       "clerk_global": True}
+                       "clerk_global": True, "download_ui": "box", "box_aria": False}
         self.sessions = set()
         self.signins = 0
         self.songs = {}
@@ -168,7 +172,9 @@ class FakeSuno:
                 if len(parts) == 2 and parts[0] == "song" and parts[1] in fake.songs:
                     song = fake.songs[parts[1]]
                     cfg = json.dumps({"id": parts[1], "title": song["title"], "delivery": fake.config["delivery"],
-                                      "confirm": fake.config["confirm"], "prepare_ms": fake.config["prepare_ms"]})
+                                      "confirm": fake.config["confirm"], "prepare_ms": fake.config["prepare_ms"],
+                                      "ui": fake.config["download_ui"], "aria": fake.config["box_aria"],
+                                      "left": fake.config["downloads_left"], "unlocked": parts[1] in fake.counted})
                     similar = "".join(
                         f'<div class="row"><a href="/song/{s}">{html.escape(fake.songs[s]["title"])}</a>'
                         f'<button aria-label="More Options">...</button></div>' for s in fake.similar)
@@ -328,9 +334,51 @@ const cfg = __CFG__;
 const $ = (s) => document.querySelector(s);
 const menu = $('#menu'), sub = $('#sub'), dl = $('#dl'), dlg = $('#dlg');
 $('#more').addEventListener('click', () => { menu.hidden = !menu.hidden; sub.hidden = true; });
-const openSub = () => { if (dl.getAttribute('aria-disabled') !== 'true') sub.hidden = false; };
+const openSub = () => { if (cfg.ui === 'menu' && dl.getAttribute('aria-disabled') !== 'true') sub.hidden = false; };
 dl.addEventListener('mouseenter', openSub);
-dl.addEventListener('click', openSub);
+dl.addEventListener('click', () => (cfg.ui === 'box' ? openBox() : openSub()));
+function el(tag, text) { const e = document.createElement(tag); if (text != null) e.textContent = text; return e; }
+function openBox() {  // suno.com, October 2026: the download box
+  if (dl.getAttribute('aria-disabled') === 'true') return;
+  menu.hidden = sub.hidden = true;
+  let chosen = 'mp3';
+  const close = el('button', '×'); close.setAttribute('aria-label', 'Close'); close.onclick = () => { dlg.hidden = true; };
+  const rows = [['m4a', 'M4A'], ['mp3', 'MP3'], ['wav', 'WAV'], ['video', 'MP4 video asset']].map(([f, label]) => {
+    const b = el('button', label); b.className = 'fmt'; b.dataset.f = f;
+    b.onclick = () => { chosen = f; paint(); };
+    return b;
+  });
+  const stems = el('div', 'Stems & MIDI '); stems.append(el('button', 'Manage'));
+  function paint() {
+    for (const b of rows) {
+      const on = b.dataset.f === chosen;
+      b.style.background = on ? '#eee8d5' : '';
+      const mark = b.querySelector('svg'); if (mark) mark.remove();
+      if (on) b.insertAdjacentHTML('beforeend', '<svg width="12" height="12" aria-hidden="true"><path d="M1 6l3 3 7-7"/></svg>');
+      if (cfg.aria) b.setAttribute('aria-pressed', String(on));
+    }
+  }
+  const go = el('button', cfg.unlocked ? 'Download' : 'Unlock & Download');
+  const plan = el('div');
+  plan.append(el('span', 'Plan'), el('b', 'Premier'), el('span', 'Downloads'),
+              el('b', cfg.left == null ? 'Unlimited' : String(cfg.left)), el('span', 'Refreshes'), el('b', '11/28/26'));
+  go.onclick = () => {
+    if (chosen !== 'wav' && chosen !== 'mp3') return;
+    go.disabled = true; go.textContent = 'Preparing...';
+    fetch(`/api/download/${cfg.id}?fmt=${chosen}`, {method: 'POST'}).then(r => r.json()).then(j => {
+      if (j.limit) { limitBox(); return; }
+      setTimeout(() => deliver(chosen), cfg.prepare_ms);
+    });
+  };
+  dlg.replaceChildren(close, el('h2', `Download '${cfg.title}'`), ...rows, stems, go, plan);
+  paint();
+  dlg.hidden = false;
+}
+function limitBox() {
+  box(`<h2>You've reached your download limit</h2><p>Your plan's downloads for this month are used up.</p>
+       <button id="buy">Buy more downloads</button> <button onclick="dlg.hidden = true">Close</button>`);
+  $('#buy').addEventListener('click', () => fetch('/api/buy', {method: 'POST'}));
+}
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') { menu.hidden = sub.hidden = true; dlg.hidden = true; }
 });
@@ -352,12 +400,7 @@ for (const item of sub.querySelectorAll('[data-fmt]')) item.addEventListener('cl
   menu.hidden = sub.hidden = true;
   if (fmt === 'video') return;
   fetch(`/api/download/${cfg.id}?fmt=${fmt}`, {method: 'POST'}).then(r => r.json()).then(j => {
-    if (j.limit) {
-      box(`<h2>You've reached your download limit</h2><p>Your plan's downloads for this month are used up.</p>
-           <button id="buy">Buy more downloads</button> <button onclick="dlg.hidden = true">Close</button>`);
-      $('#buy').addEventListener('click', () => fetch('/api/buy', {method: 'POST'}));
-      return;
-    }
+    if (j.limit) { limitBox(); return; }
     if (fmt === 'wav') {
       box(`<h2>Download WAV Audio</h2><p id="state">Preparing your file...</p>
            <button onclick="dlg.hidden = true">Cancel</button> <button id="go" disabled>Download File</button>`);

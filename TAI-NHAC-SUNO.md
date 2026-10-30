@@ -4,7 +4,9 @@ Tool tải **các bài nhạc trong một workspace Suno** về một thư mục
 chỉ tải các bài mới. Tool chạy trên **Windows** hoặc **Linux** (máy tính hoặc VPS).
 
 Tool **không dùng API**. Nó mở một Chrome thật đã đăng nhập Suno rồi làm đúng các bước một người làm: mở workspace,
-rồi với từng bài bấm **⋯ → Download → WAV Audio → Download File**.
+rồi với từng bài bấm **⋯ → Download**, trong hộp *Download 'tên bài'* chọn **WAV** rồi bấm **Unlock & Download**
+(giao diện Suno từ tháng 10/2026; cách cũ ⋯ → Download → WAV Audio → Download File vẫn chạy).
+- Hộp Download ghi số lượt tải còn lại của gói (*Downloads 59*). Khi hộp ghi **Downloads 0**, tool dừng, không bấm gì.
 
 ## Cần biết trước
 

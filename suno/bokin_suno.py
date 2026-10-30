@@ -519,7 +519,17 @@ def cmd_selftest(args, data):
     check(sel["text_format"]["wav"].search("WAV Audio") and not sel["text_format"]["wav"].search("MP3 Audio"), "wav")
     check(sel["text_format"]["mp3"].search("MP3 Audio") and not sel["text_format"]["mp3"].search("Video"), "mp3")
     check(sel["text_download"].search("Download") and not sel["text_download"].search("Downloads left"), "download")
-    check(all(sel["text_go"].search(t) for t in ("Download File", "Download", "continue")), "go buttons")
+    check(all(sel["text_go"].search(t) for t in ("Download File", "Download", "continue", "Unlock & Download")),
+          "go buttons")
+    check(sel["text_dialog_format"]["wav"].search("WAV") and not sel["text_dialog_format"]["mp3"].search(
+        "MP4 video asset") and not sel["text_dialog_format"]["wav"].search("M4A"), "the download box's rows")
+    check(sel["text_none_left"].search("Plan Premier Downloads 0 Refreshes 11/28/26")
+          and sel["text_none_left"].search("PlanPremierDownloads0Refreshes11/28/26")
+          and not sel["text_none_left"].search("PlanPremierDownloads59Refreshes11/28/26")
+          and not sel["text_none_left"].search("Downloads 05") and not sel["text_none_left"].search("Downloads 0/60")
+          and not sel["text_none_left"].search("Plan Premier Downloads 59 Refreshes 11/28/26")
+          and not sel["text_buy"].search("Plan Premier Downloads 59 Refreshes 11/28/26 Unlock & Download"),
+          "downloads left in the download box")
     check(not any(sel["text_go"].search(t) for t in ("Buy more downloads", "Download Video", "Cancel")), "not go")
     check(all(sel["text_buy"].search(t) for t in ("Buy more downloads", "Upgrade to Premier", "only $4.99")), "buy")
     check(not sel["text_buy"].search("Download WAV Audio. Preparing your file"), "not buy")
