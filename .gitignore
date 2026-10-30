@@ -5,3 +5,30 @@ __pycache__/
 data/
 nhac-suno/
 *.tmp
+
+# Bokin Suno Master (merged from its branch)
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# Audio and results
+outputs/
+*.wav
+*.mp3
+*.flac
+
+# Built by packaging/ and the workflow
+packaging/icon.ico
+bokin_suno/version.txt
+build/
+dist/
+dist-next/
+build-next/
+release/
+
+# Bokin Suno Studio
+bokin_studio/version.txt

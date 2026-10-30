@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bokin-suno"
+version = "0.1.0"
+description = "Bokin Suno Master: clean up and master songs made with Suno AI"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.12",      # ShortTimeFFT
+    "soundfile>=0.12",  # bundles libsndfile with MP3 support
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "httpx", "pyloudnorm"]  # pyloudnorm: a second opinion in the tests
+# `bokin-suno app`: the local web UI (truststore: Windows' own certificate check for updates)
+app = ["fastapi", "uvicorn[standard]", "python-multipart", "truststore; sys_platform == 'win32'"]
+
+[project.scripts]
+bokin-suno = "bokin_suno.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["bokin_suno", "bokin_suno.*", "bokin_license"]
+
+[tool.setuptools.package-data]
+bokin_suno = ["static/*.html", "version.txt"]
+
+[tool.ruff]
+line-length = 120
+extend-exclude = ["packaging/brand", "bokin_license"]  # copies: the Bokin icon family's generator (bokin-video-fx), Bokin License
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B"]
+ignore = ["B008"]  # FastAPI's File(...) defaults
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["unlicensed: the app is not activated (a test signing key, an empty key store)"]
