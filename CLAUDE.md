@@ -65,8 +65,9 @@
   hộp) → hộp "Download · Auto split · 6 stems" (ô MP3, WAV, MIDI; Tempo behavior Fixed / Follow tempo changes; Cancel /
   Download) → một file zip, giải nén an toàn (`folder.unpack`) vào "Tên bài - stems". Chủ chọn (30/10/2026): bài chưa
   tách thì bấm Extract (có thể tốn credit), tải WAV + MP3 + MIDI, Follow tempo changes; hết credit / Upgrade thì dừng.
-  Extract chỉ bấm khi hộp đã hiện xong (ít nhất `SETTLE_SECONDS`, rồi tới khi trang hết tải dữ liệu `NET_QUIET`, tối đa
-  `SETTLE_MAX`) mà không có stems nào (đã tách, đang tách, nút Download), và
+  Extract chỉ bấm khi hộp đã hiện xong (ít nhất `SETTLE_SECONDS`, rồi tới khi trang hết chờ trả lời `NET_QUIET`, tính từ
+  lúc bấm Manage; quá `SETTLE_MAX` mà trang vẫn tải thì không bấm) mà không có stems nào (đã tách, đang tách, nút
+  Download), và
   **mỗi bài một lần** (`data/stems-extract.json`, lớp `Extracted`); hộp xác nhận chỉ bấm một lần, nhận ra theo dấu
   `data-bokin-box`/`data-bokin-seen` chứ không theo chữ. Downloads 0 thì dừng trước Manage. Giải nén vào thư mục ẩn, đủ
   WAV/MP3/MIDI đã chọn mới đổi tên thành thư mục stems. Ô tick MP3/WAV/MIDI: theo aria nếu có, không thì bấm thử và

@@ -182,7 +182,7 @@ class FakeSuno:
                     return self._send(200, f"<!doctype html><title>Suno</title><p>Opening...</p><script>setTimeout("
                                            f"() => location.replace('/song/{target}'), 400)</script>")
                 if len(parts) == 3 and parts[:2] == ["api", "stems"]:
-                    time.sleep(min(60, int(q.get("wait", ["0"])[0] or 0)) / 1000)  # (a slow server)
+                    time.sleep(min(60_000, int(q.get("wait", ["0"])[0] or 0)) / 1000)  # (a slow server)
                     return self._send(200, json.dumps({"state": fake.stems.get(parts[2], "none")}), "application/json")
                 if len(parts) == 2 and parts[0] == "stemszip" and parts[1].endswith(".zip"):
                     sid = parts[1][:-4]

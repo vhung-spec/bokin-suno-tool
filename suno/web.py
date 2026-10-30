@@ -492,7 +492,7 @@ class Catcher:
     def __init__(self, context):
         self.context = context
         self.downloads = []
-        self.net_at, self.open = time.monotonic(), set()
+        self.net_at, self.open = time.monotonic(), {}
         for p in context.pages:
             self._watch(p)
         context.on("page", self._watch)
@@ -500,15 +500,23 @@ class Catcher:
     def _watch(self, page):
         page.on("download", lambda d: self.downloads.append(d))
         page.on("request", lambda r: self._net(r, True))
-        page.on("requestfinished", lambda r: self._net(r, False))
+        # (answered: its 'response'; a body the page never reads never 'finishes')
+        page.on("response", lambda r: self._net(r.request, False))
         page.on("requestfailed", lambda r: self._net(r, False))
 
     def _net(self, request, opened):
         self.net_at = time.monotonic()
-        (self.open.add if opened else self.open.discard)(id(request))
+        if opened:
+            self.open[id(request)] = self.net_at
+        else:
+            self.open.pop(id(request), None)
+
+    def watch_net(self):
+        """From now on: the requests asked for before are not waited for."""
+        self.net_at, self.open = time.monotonic(), {}
 
     def quiet(self, seconds):
-        """Nothing asked for or received for `seconds`, no request open."""
+        """Nothing asked for or answered for `seconds`, no request waiting for its answer."""
         return not self.open and time.monotonic() - self.net_at >= seconds
 
     def reset(self):
@@ -758,8 +766,9 @@ STEM_FILES = ("wav", "mp3", "midi")
 STEMS_WAIT = int(os.environ.get("BOKIN_SUNO_STEMS_WAIT") or 20 * 60)  # seconds Suno has to make a song's stems
 FILES_WAIT = 10 * 60  # seconds the stems' files have to arrive once their Download is pressed (MIDI takes longer)
 # the stems box may load a song's stems after it opens: before Extract, it is given SETTLE_SECONDS, and then until
-# the page has been quiet (no request open, none for NET_QUIET seconds), SETTLE_MAX at most
-SETTLE_SECONDS, NET_QUIET, SETTLE_MAX = 15, 3, 45
+# the page has been quiet (no request waiting for its answer, none for NET_QUIET seconds); a page still loading after
+# SETTLE_MAX gets no Extract
+SETTLE_SECONDS, NET_QUIET, SETTLE_MAX = 15, 1.5, 45
 LISTED_WAIT = 180  # stems listed but no Download button: seconds it has to appear
 
 # Whether a row of the stems' Download box is ticked, as the page states it (aria-checked, a checkbox, data-state):
@@ -951,11 +960,11 @@ def _stems_state(page, title):
     return "listed" if seen["stems"] or seen["studio"] else "none"
 
 
-def _confirm_extract(page, title):
+def _confirm_extract(page, title, press=True):
     """A box that appeared after Extract was pressed, asking to confirm it (it may say what it costs): its Extract /
-    Confirm / Continue / OK / Yes pressed. Never a box this flow knows (marked, or shown before the press, or with the
-    stems box's tabs); a box that offers to buy, or says the credits or downloads are used up, stops the run; one
-    offering to unlock is left alone. Returns whether a box was confirmed."""
+    Confirm / Continue / OK / Yes pressed (press=False: only whether there is one). Never a box this flow knows (marked,
+    or shown before the press, or with the stems box's tabs); a box that offers to buy, or says the credits or
+    downloads are used up, stops the run; one offering to unlock is left alone. Returns whether a box was confirmed."""
     for box in _boxes(page):
         try:
             if box.get_attribute("data-bokin-box") or box.get_attribute("data-bokin-seen"):
@@ -972,7 +981,8 @@ def _confirm_extract(page, title):
             continue
         yes = _in_box(box, SEL["text_confirm"])
         if yes is not None and _enabled(yes):
-            yes.click()
+            if press:
+                yes.click()
             return True
     return False
 
@@ -1094,6 +1104,7 @@ def download_stems(page, catcher, song, dest, log, files=STEM_FILES, tempo="foll
             raise SunoError("limit", "Hộp Download của Suno ghi Downloads 0: hết lượt tải của gói (tới ngày làm mới "
                                      "ghi trong hộp). Tool dừng, không tách và không tải stems")
         _stop_if_buy(page, title)
+        catcher.watch_net()  # (what the stems box asks for, from here)
         manage.click()
         if _poll(page, lambda: _stems_box(page), 15_000) is None:
             raise SunoError("stuck", "Bấm Manage nhưng không thấy hộp Extract Stems and MIDI")
@@ -1102,11 +1113,12 @@ def download_stems(page, catcher, song, dest, log, files=STEM_FILES, tempo="foll
             tab.click()
             page.wait_for_timeout(500)
 
-        opened = time.monotonic()  # (the box may load the song's stems after it opens)
+        opened, settled = time.monotonic(), False  # (the box may load the song's stems after it opens)
         state = _stems_state(page, title)
         while state != "ready":
             waited = time.monotonic() - opened
-            if waited >= SETTLE_MAX or (waited >= SETTLE_SECONDS and catcher.quiet(NET_QUIET)):
+            settled = waited >= SETTLE_SECONDS and catcher.quiet(NET_QUIET)
+            if settled or waited >= SETTLE_MAX:
                 break
             check_stop()
             page.wait_for_timeout(250)
@@ -1124,6 +1136,9 @@ def download_stems(page, catcher, song, dest, log, files=STEM_FILES, tempo="foll
                                              "stems. Mở bài trên suno.com xem (bấm Extract bằng tay nếu cần) rồi "
                                              "chạy lại")
             deadline, waiting = time.monotonic() + timeout_seconds - ago, f"pressed {when}"
+        elif state == "none" and not settled:  # (still loading: it may be listing the stems, or making them)
+            raise SunoError("not_ready", f"Hộp Extract Stems and MIDI vẫn đang tải sau {_span(SETTLE_MAX)}: không "
+                                         "bấm Extract. Chạy lại sau")
         elif state == "none":
             if not extract:
                 raise SunoError("no_stems", "Bài chưa tách stems trên Suno (chưa bấm Extract): bỏ qua")
@@ -1135,6 +1150,7 @@ def download_stems(page, catcher, song, dest, log, files=STEM_FILES, tempo="foll
                 raise SunoError("stuck", "Nút Extract đang tắt (có thể hết credit, hoặc Suno đang tách stems): "
                                          "không bấm")
             page.evaluate(JS_SEEN, SEL["dialog"])  # (the boxes shown before the press: never confirmed)
+            check_stop()
             if on_extract:
                 on_extract(True)
             log.info("%s: đang tách stems trên Suno (Extract, Auto split): có thể mất vài phút", title)
@@ -1149,9 +1165,13 @@ def download_stems(page, catcher, song, dest, log, files=STEM_FILES, tempo="foll
                     raise SunoError("stuck", f"Đã bấm Extract nhưng sau {_span(timeout_seconds)} stems vẫn chưa "
                                              "xong. Lần sau tool không bấm Extract nữa, chỉ chờ và tải")
                 raise SunoError("not_ready", "Suno vẫn đang tách stems của bài này: chạy lại sau ít phút")
-            check_stop()  # (a press is remembered already: stopping here costs nothing)
             try:
                 _stop_if_buy(page, title)
+                if stop and stop():  # (a press is remembered already: stopping here costs nothing more)
+                    if waiting == "extract" and not confirmed and _confirm_extract(page, title, press=False):
+                        if on_extract:
+                            on_extract(False)  # (its confirmation not pressed: nothing is made)
+                    check_stop()
                 if not confirmed:
                     confirmed = _confirm_extract(page, title)
             except SunoError as e:
@@ -1195,7 +1215,9 @@ def download_stems(page, catcher, song, dest, log, files=STEM_FILES, tempo="foll
             if saved and time.monotonic() - last > (10 if set(files) <= _kinds(saved) else 60):
                 break
             _stop_if_buy(page, title)
-            for other in _boxes(page):  # a box saying the plan's downloads are used up
+            for other in _boxes(page):  # a box saying the plan's downloads are used up (not the song's own box)
+                if other.get_attribute("data-bokin-box") == "download":
+                    continue
                 text = _without(_text(other), title)
                 if SEL["text_limit"].search(text) or SEL["text_none_left"].search(text):
                     raise SunoError("limit", f"Suno báo hết lượt tải: \"{text[:160]}\". Tool dừng")

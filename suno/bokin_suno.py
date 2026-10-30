@@ -426,33 +426,44 @@ class Extracted:
 
 def stems_one(page, catcher, song, out, args, extracted):
     """One song's Stems & MIDI into its "Title - stems" folder (a zip from Suno unpacked). Everything is unpacked
-    and checked in a hidden folder first: the stems folder appears complete or not at all. Returns (folder, files)."""
+    and checked in a hidden folder first: the stems folder appears complete or not at all. Stems complete there but
+    not moved into place (Windows: a file held open) are moved on the next run, not downloaded again. Returns
+    (folder, files)."""
     part = out.root / f".{song.id}.stems.part"
-    shutil.rmtree(part, ignore_errors=True)
-    (part / "got").mkdir(parents=True)
-    unpacked = part / "stems"
+    unpacked, ready = part / "stems", part / "ready.txt"  # (ready: the stems in part/stems are complete; the title)
+    if ready.is_file() and unpacked.is_dir():
+        title = ready.read_text(encoding="utf-8").strip() or song.title
+        kept = [p for p in unpacked.rglob("*") if p.is_file()]
+        log.info("%s: stems đã tải xong lần trước, chỉ chưa chuyển vào thư mục: chuyển lại", title)
+    else:
+        title, kept = None, []
+    keep = False
     try:
-        title, got = web.download_stems(page, catcher, song, part / "got", log, files=args.stem_files,
-                                        tempo=args.tempo, extract=not args.no_extract,
-                                        extracted_at=extracted.get(song.id),
-                                        on_extract=lambda pressed: extracted.note(song.id, pressed), stop=stop_asked)
-        kept = []
-        for path in got:
-            if zipfile.is_zipfile(path):
-                try:
-                    kept += folder.unpack(path, unpacked)
-                except folder.UnpackError as e:
-                    raise web.SunoError("stuck", str(e)) from e
-            elif folder.stem_file_ok(path):
-                unpacked.mkdir(parents=True, exist_ok=True)
-                target = unpacked / folder.safe_file_name(path.name.split("-", 1)[-1], "stem")
-                path.replace(target)
-                kept.append(target)
-            else:
-                raise web.SunoError("stuck", f"File nhận được không phải stems (zip, WAV, MP3, MIDI): {path.name}")
-        missing = [k.upper() for k in args.stem_files if k not in folder.stem_kinds(kept)]
-        if missing:
-            raise web.SunoError("stuck", f"File stems Suno gửi không có {', '.join(missing)}")
+        if title is None:
+            shutil.rmtree(part, ignore_errors=True)
+            (part / "got").mkdir(parents=True)
+            title, got = web.download_stems(page, catcher, song, part / "got", log, files=args.stem_files,
+                                            tempo=args.tempo, extract=not args.no_extract,
+                                            extracted_at=extracted.get(song.id),
+                                            on_extract=lambda pressed: extracted.note(song.id, pressed),
+                                            stop=stop_asked)
+            for path in got:
+                if zipfile.is_zipfile(path):
+                    try:
+                        kept += folder.unpack(path, unpacked)
+                    except folder.UnpackError as e:
+                        raise web.SunoError("stuck", str(e)) from e
+                elif folder.stem_file_ok(path):
+                    unpacked.mkdir(parents=True, exist_ok=True)
+                    target = unpacked / folder.safe_file_name(path.name.split("-", 1)[-1], "stem")
+                    path.replace(target)
+                    kept.append(target)
+                else:
+                    raise web.SunoError("stuck", f"File nhận được không phải stems (zip, WAV, MP3, MIDI): {path.name}")
+            missing = [k.upper() for k in args.stem_files if k not in folder.stem_kinds(kept)]
+            if missing:
+                raise web.SunoError("stuck", f"File stems Suno gửi không có {', '.join(missing)}")
+            ready.write_text(title or "", encoding="utf-8")
         dest = out.stems_dir(song, title)
         for attempt in range(20):  # (Windows: an antivirus or the indexer may still hold a new file open a moment)
             try:
@@ -460,17 +471,22 @@ def stems_one(page, catcher, song, out, args, extracted):
                 break
             except PermissionError as e:
                 if attempt == 19:
-                    raise web.SunoError("stuck", f"Không đổi tên được thư mục stems thành {dest.name}: có chương "
-                                                 "trình đang mở file trong đó") from e
+                    keep = True
+                    raise web.SunoError("not_ready", f"Không đổi tên được thư mục stems thành {dest.name}: có chương "
+                                                     "trình đang mở file trong đó. Lần sau tool chuyển lại, không "
+                                                     "tải lại") from e
                 time.sleep(0.5)
         out.add_stems(song, dest, title)
         return dest, [dest / p.relative_to(unpacked) for p in kept]
     finally:
-        shutil.rmtree(part, ignore_errors=True)
+        if not keep:
+            shutil.rmtree(part, ignore_errors=True)
 
 
-def run_stems(page, catcher, songs, out, args, data, name):
-    """The Stems & MIDI of these songs, each not done before. Returns (done, failed, stopped reason or "")."""
+def run_stems(page, catcher, songs, out, args, data, name, retried=()):
+    """The Stems & MIDI of these songs, each not done before. retried: the ids of songs not at the links, tried again
+    because they failed before in this folder (another account's songs, maybe: the folder may be shared). Returns
+    (done, failed, stopped reason or "")."""
     # (a song whose audio was downloaded here is the account's own, whatever another account's run wrote)
     todo = [s for s in songs if not out.stems_ok(s.id) and (out.has_audio(s.id) or not out.not_mine(s.id))]
     if getattr(args, "limit", None) is not None:
@@ -496,15 +512,15 @@ def run_stems(page, catcher, songs, out, args, data, name):
             if code == "stopped":
                 stopped = note
                 break
+            if code == "not_mine" and (song.id in retried or out.failed_before(song.id, folder.STEMS)):
+                # one of this folder's songs tried again: most likely another account's (the folder is shared)
+                log.warning("%s: stems: bài của tài khoản khác, bỏ qua lần này", label)
+                continue
             if code == "not_mine" and out.has_audio(song.id):
                 # downloaded into this folder before, so the song is the account's own: another account is chosen
                 log.error("%s: stems: bài này đã được tải bằng một tài khoản Suno khác. Chọn đúng tài khoản đó rồi "
                           "bấm lại", label)
                 failed += 1
-                continue
-            if code == "not_mine" and out.failed_before(song.id, folder.STEMS):
-                # one of this folder's songs, tried again: most likely another account's (the folder is shared)
-                log.warning("%s: stems: bài của tài khoản khác, bỏ qua lần này", label)
                 continue
             if code == "not_mine":
                 log.warning("%s: %s", label, note)
@@ -549,7 +565,8 @@ def cmd_stems(args, data):
         if not all(web.one_song(url) for url in links):  # (a song's own link: that song only)
             again = [web.Song(sid, title) for sid, title in out.failed(folder.STEMS)
                      if sid not in {s.id for s in songs}]
-        done, failed, stopped = run_stems(page, web.Catcher(context), songs + again, out, args, data, name)
+        done, failed, stopped = run_stems(page, web.Catcher(context), songs + again, out, args, data, name,
+                                          {s.id for s in again})
     if stopped:
         log.error("Đã dừng: %s", stopped)
     log.info("Tổng: stems của %d bài tải xong, %d bài lỗi (trong %s). Thư mục: %s", done, failed,
@@ -577,16 +594,17 @@ def cmd_download(args, data):
     stopped = ""
     with single_run(data), browser(args, data, name, args.headless) as context:
         page = first_page(context)
-        # (with --stems a song is known once its stems are there too: the list is read on past songs without them)
+        # (with --stems the whole list is read: a song without its stems may be anywhere in it)
         songs, bad = gather_songs(data, page, name, account, links,
                                   lambda sid: (out.done(sid, fmt) and (not args.stems or out.stems_ok(sid)))
                                   or out.not_mine(sid),
-                                  None if args.full else KNOWN_IN_A_ROW)
+                                  None if args.full or args.stems else KNOWN_IN_A_ROW)
         todo = [s for s in songs if not out.done(s.id, fmt) and not out.not_mine(s.id)]
         log.info("Đọc được %d bài: %d bài đã tải từ trước, %d bài cần tải %s vào %s", len(songs),
                  len(songs) - len(todo), len(todo), fmt.upper(), out.root)
         listed = {s.id for s in songs}
         again = [web.Song(sid, title) for sid, title in out.failed(fmt) if sid not in listed]
+        retried = {s.id for s in again}
         if again:
             log.info("Thêm %d bài lần trước bị lỗi: thử lại", len(again))
             todo += again
@@ -607,6 +625,9 @@ def cmd_download(args, data):
             except Exception as e:
                 log.debug("download failed", exc_info=True)
                 note = describe(e)
+                if getattr(e, "code", "") == "not_mine" and song.id in retried:
+                    log.warning("%s: bài của tài khoản khác, bỏ qua lần này", label)  # (the folder may be shared)
+                    continue
                 if getattr(e, "code", "") == "not_mine" and out.has_audio(song.id):
                     log.error("%s: bài này đã được tải bằng một tài khoản Suno khác. Chọn đúng tài khoản đó rồi chạy "
                               "lại", label)
@@ -645,7 +666,7 @@ def cmd_download(args, data):
             page.wait_for_timeout(PACE_SECONDS * 1000)
         if args.stems and not stopped:  # the Stems & MIDI of the songs of these links that are downloaded
             listed = [s for s in songs + again if out.done(s.id, fmt)]
-            s_done, s_failed, stopped = run_stems(page, catcher, listed, out, args, data, name)
+            s_done, s_failed, stopped = run_stems(page, catcher, listed, out, args, data, name, retried)
             log.info("Stems & MIDI: %d bài xong, %d bài lỗi", s_done, s_failed)
             failed += s_failed
     if stopped:
@@ -867,13 +888,32 @@ def cmd_selftest(args, data):
             out = folder.Folder(tmp / "nhac")
             mine, theirs = web.Song(sid, "Của mình"), web.Song("44444444-2222-3333-4444-555555555555", "Người khác")
             again = web.Song("55555555-2222-3333-4444-555555555555", "Lần trước lỗi")
+            both = web.Song("66666666-2222-3333-4444-555555555555", "Đã tải, stems lỗi")
             out.add(mine, out.target(mine.title, sid, "wav"), "wav", mine.title)
             out.add_failure(again, folder.STEMS, "Suno vẫn đang tách stems")
+            out.add(both, out.target(both.title, both.id, "wav"), "wav", both.title)
+            out.add_failure(both, folder.STEMS, "Suno vẫn đang tách stems")
             args = argparse.Namespace(stem_files=web.STEM_FILES, tempo="follow", no_extract=False, limit=None)
-            result = run_stems(Page(), None, [mine, theirs, again], out, args, d, "suno1")
+            result = run_stems(Page(), None, [mine, theirs, again, both], out, args, d, "suno1", {both.id})
             check(result[:2] == (0, 1) and not out.not_mine(sid) and out.not_mine(theirs.id)
-                  and not out.not_mine(again.id) and out.failed_before(again.id, folder.STEMS),
+                  and not out.not_mine(again.id) and out.failed_before(again.id, folder.STEMS)
+                  and not out.not_mine(both.id),
                   f"a song downloaded here (or tried here before) is not someone else's: another account {result}")
+
+            def never(*a, **k):
+                raise AssertionError("downloaded again")
+            web.download_stems = never
+            done_before = web.Song("77777777-2222-3333-4444-555555555555", "Đã tải xong")
+            part = out.root / f".{done_before.id}.stems.part"
+            (part / "stems" / "WAV").mkdir(parents=True)
+            (part / "stems" / "WAV" / "Drums.wav").write_bytes(b"x")
+            (part / "stems" / "MIDI").mkdir()
+            (part / "stems" / "MIDI" / "Drums.mid").write_bytes(b"x")
+            (part / "stems" / "Drums.mp3").write_bytes(b"x")
+            (part / "ready.txt").write_text("Đã tải xong", encoding="utf-8")
+            dest, kept = stems_one(Page(), None, done_before, out, args, Extracted(d))
+            check(dest.name == "Đã tải xong - stems" and (dest / "WAV" / "Drums.wav").is_file() and not part.exists()
+                  and out.stems_ok(done_before.id), "complete stems not moved last time: moved, not downloaded")
         finally:
             web.download_stems = real
             log.disabled = False

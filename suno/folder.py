@@ -61,13 +61,18 @@ def safe_filename(title, fallback):
 
 
 def safe_file_name(name, fallback):
-    """A file name from Suno (a zip's entry) -> a safe one that keeps its extension when it is shortened."""
+    """A file name from Suno (a zip's entry) -> a safe one. A long one is shortened in the middle: its end (the
+    instrument: "Title (Drums).wav") and its extension are kept."""
     stem, dot, ext = (name or "").rpartition(".")
     ext = re.sub(r"[^A-Za-z0-9]", "", ext)[:8] if dot and stem.strip(" .") else ""
     if not ext:
-        return safe_filename(name, fallback)
-    base = safe_filename(stem, fallback)[:NAME_MAX - len(ext) - 1].rstrip(". ") or fallback
-    return f"{base}.{ext}"
+        stem = name or ""
+    room = NAME_MAX - (len(ext) + 1 if ext else 0)
+    clean = re.sub(r"\s+", " ", re.sub(r'[<>:"/\\|?*\x00-\x1f\x7f]', " ", unicodedata.normalize("NFC", stem))).strip()
+    if len(clean) > room:
+        clean = clean[:room - 31].rstrip() + "…" + clean[-30:].lstrip()
+    base = safe_filename(clean, fallback)
+    return f"{base}.{ext}" if ext else base
 
 
 def audio_ok(path, fmt):
@@ -132,9 +137,9 @@ def unpack(zip_path, dest, limit=UNPACK_MAX):
                 target = root.joinpath(*parts)
                 if root not in target.resolve().parents:
                     continue
-                n = 2
+                first, n = target, 2
                 while target in written:  # (two names that came out the same once made safe)
-                    target = target.with_name(f"{target.stem.rsplit(' (', 1)[0]} ({n}){target.suffix}")
+                    target = first.with_name(f"{first.stem} ({n}){first.suffix}")
                     n += 1
                 target.parent.mkdir(parents=True, exist_ok=True)
                 with z.open(info) as src, open(target, "wb") as out:

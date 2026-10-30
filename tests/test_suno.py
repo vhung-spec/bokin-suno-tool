@@ -357,8 +357,9 @@ def main():
         fake.config["stems_load_ms"] = 20000
         slow_server = fake.add_song("Máy chủ chậm", in_workspace=False)
         fake.stems[slow_server] = "ready"
+        started = time.monotonic()
         cli("stems", "suno1", song_link(slow_server), "--out", str(nhac), contains="stems của 1 bài tải xong")
-        check(slow_server not in fake.extract_clicks, "Extract not pressed")
+        check(slow_server not in fake.extract_clicks and time.monotonic() - started >= 20, "Extract not pressed")
         fake.config["stems_load_ms"] = 0
 
         print("== ticks drawn as an svg square, MIDI unticked at first (Suno remembering): all three downloaded")
@@ -373,13 +374,18 @@ def main():
         fake.config["extract_ms"] = 600_000
         halt = fake.add_song("Dừng giữa chừng", in_workspace=False)
         stop = tmp / "stop-stems"
-        timer = threading.Timer(25, lambda: stop.write_text("", encoding="utf-8"))
-        timer.start()
+
+        def stop_once_pressed():  # (Stop pressed while Suno makes the stems)
+            end = time.monotonic() + 300
+            while halt not in fake.extract_clicks and time.monotonic() < end:
+                time.sleep(0.2)
+            time.sleep(3)
+            stop.write_text("", encoding="utf-8")
+        threading.Thread(target=stop_once_pressed, daemon=True).start()
         started = time.monotonic()
         cli("stems", "suno1", song_link(halt), "--out", str(nhac), expect=1, contains="Đã dừng theo yêu cầu",
             extra={"BOKIN_SUNO_STOP": str(stop)})
-        timer.cancel()
-        check(time.monotonic() - started < 120 and fake.extract_clicks.count(halt) == 1, "stopped, pressed once")
+        check(time.monotonic() - started < 180 and fake.extract_clicks.count(halt) == 1, "stopped, pressed once")
         memory = json.loads((data / "stems-extract.json").read_text(encoding="utf-8"))
         check(halt in memory, "the press remembered")
         fake.config["extract_ms"] = 1500
