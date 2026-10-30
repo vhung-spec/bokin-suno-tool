@@ -9,8 +9,10 @@ are not trusted: anything Windows or Linux would read as a path, a device name, 
 Excel is taken out.
 """
 import csv
+import errno
 import io
 import re
+import shutil
 import unicodedata
 import zipfile
 from datetime import datetime
@@ -26,7 +28,11 @@ NAME_MAX = 80
 
 
 class FolderError(Exception):
-    pass
+    """danh-sach.csv or the folder cannot be used: the run stops."""
+
+
+class UnpackError(Exception):
+    """A stems zip that cannot be unpacked (broken, too big): that song fails, the run goes on."""
 
 
 def safe_cell(value):
@@ -70,16 +76,41 @@ def audio_ok(path, fmt):
     return head[:3] == b"ID3" or (len(head) > 1 and head[0] == 0xFF and head[1] & 0xE0 == 0xE0)
 
 
+def stem_file_ok(path):
+    """Is the file one stem (a WAV, an MP3 or a MIDI file), not an error page saved under a stems name?"""
+    path = Path(path)
+    if audio_ok(path, "wav") or audio_ok(path, "mp3"):
+        return True
+    try:
+        with open(path, "rb") as f:
+            return f.read(4) == b"MThd" and path.stat().st_size >= 14
+    except OSError:
+        return False
+
+
+def stem_kinds(paths):
+    """The kinds of stems among these files: {"wav", "mp3", "midi"}."""
+    ext = {".wav": "wav", ".mp3": "mp3", ".mid": "midi", ".midi": "midi"}
+    return {ext[Path(p).suffix.lower()] for p in paths if Path(p).suffix.lower() in ext}
+
+
 def unpack(zip_path, dest, limit=UNPACK_MAX):
     """The files of a zip into `dest`, its folders kept. The names come from Suno and are not trusted: no "..", no
-    drive or absolute path, Windows-safe names, nothing outside `dest`, at most `limit` bytes in all. Returns the files
-    written."""
+    drive or absolute path, Windows-safe names, nothing outside `dest`, at most `limit` bytes in all, and not more
+    than the disk has room for. Returns the files written. Raises UnpackError (a broken or too big zip), OSError (the
+    disk is full)."""
     dest = Path(dest)
     dest.mkdir(parents=True, exist_ok=True)
     root = dest.resolve()
     written, total = [], 0
     try:
         with zipfile.ZipFile(zip_path) as z:
+            declared = sum(i.file_size for i in z.infolist())
+            if declared > limit:
+                raise UnpackError("File stems giải nén ra quá lớn")
+            free = shutil.disk_usage(root).free
+            if declared > free:
+                raise OSError(errno.ENOSPC, f"No space left on device: the stems need {declared} bytes, {free} free")
             for info in z.infolist():
                 if info.is_dir():
                     continue
@@ -98,12 +129,21 @@ def unpack(zip_path, dest, limit=UNPACK_MAX):
                             break
                         total += len(block)
                         if total > limit:
-                            raise FolderError("File stems giải nén ra quá lớn")
+                            raise UnpackError("File stems giải nén ra quá lớn")
                         out.write(block)
                 written.append(target)
-    except zipfile.BadZipFile as e:
-        raise FolderError(f"File stems nhận được hỏng: {e}") from e
+    except (zipfile.BadZipFile, zipfile.LargeZipFile, NotImplementedError, RuntimeError, EOFError) as e:
+        raise UnpackError(f"File stems nhận được hỏng: {e}") from e
     return written
+
+
+def _name_base(row):
+    """The name (lowercased, without extension) a row's song owns: "title" for "Title.wav", and for its stems
+    folder "Title - stems" the same "title" (the song's audio and stems keep one name)."""
+    file = row.get("file") or ""
+    if (row.get("dinh_dang") or "") == STEMS:
+        return re.sub(r" - stems( \(\d+\))?$", "", file, flags=re.I).lower()
+    return Path(file).stem.lower()
 
 
 class Folder:
@@ -137,6 +177,16 @@ class Folder:
     def not_mine(self, song_id):
         return any(sid == song_id and r["trang_thai"] == NOT_MINE for (sid, _), r in self.rows.items())
 
+    def has_audio(self, song_id):
+        """Was the song's audio downloaded into this folder (so by the account that owns it)?"""
+        return any(sid == song_id and f != STEMS and r["trang_thai"] == DONE for (sid, f), r in self.rows.items())
+
+    def stems_ok(self, song_id):
+        """Are the song's stems done, their folder still here? (A folder moved or deleted: they are downloaded
+        again.)"""
+        row = self.rows.get((song_id, STEMS)) or {}
+        return row.get("trang_thai") == DONE and bool(row.get("file")) and (self.root / row["file"]).is_dir()
+
     def failed(self, fmt):
         """(id, title) of the songs that failed before, to try again."""
         return [(sid, r.get("ten_bai", "")) for (sid, f), r in self.rows.items()
@@ -146,9 +196,9 @@ class Folder:
         """A new file path for the song: its title, made unique in this folder. The name is not one another song
         uses in any format, nor that of a lyrics file (Title.txt) that is not the song's own."""
         stem = safe_filename(title, f"suno-{song_id[:8]}")
-        mine = {Path(r["file"]).stem.lower() for (sid, _), r in self.rows.items() if sid == song_id and r.get("file")}
+        mine = {_name_base(r) for (sid, _), r in self.rows.items() if sid == song_id and r.get("file")}
         names = {p.name.lower() for p in self.root.iterdir()}
-        taken = {Path(r["file"]).stem.lower() for (sid, _), r in self.rows.items() if sid != song_id and r.get("file")}
+        taken = {_name_base(r) for (sid, _), r in self.rows.items() if sid != song_id and r.get("file")}
         taken |= {Path(r["file"]).name.lower() for r in self.rows.values() if r.get("file")}
 
         def free(s):
@@ -171,14 +221,15 @@ class Folder:
         self._set(song, fmt, song.title, FAILED, note=note)
 
     def stems_dir(self, song, title):
-        """The folder for a song's Stems & MIDI, next to its audio file and named after it: "Title - stems"."""
+        """A new folder for a song's Stems & MIDI, next to its audio file and named after it: "Title - stems". A song
+        without its audio here yet gets the name its audio will have (target), so the two stay together."""
         row = self.rows.get((song.id, STEMS)) or {}
-        if row.get("file"):
+        if row.get("file") and not (self.root / row["file"]).exists():
             return self.root / row["file"]
         audio = next((r["file"] for (sid, f), r in self.rows.items() if sid == song.id and f != STEMS
                       and r.get("file")), "")
-        stem = Path(audio).stem if audio else safe_filename(title, f"suno-{song.id[:8]}")
-        taken = {(r.get("file") or "").lower() for r in self.rows.values()}
+        stem = Path(audio).stem if audio else self.target(title, song.id, "wav").stem
+        taken = {(r.get("file") or "").lower() for (sid, f), r in self.rows.items() if (sid, f) != (song.id, STEMS)}
         name, n = f"{stem} - stems", 2
         while name.lower() in taken or (self.root / name).exists():
             name, n = f"{stem} - stems ({n})", n + 1

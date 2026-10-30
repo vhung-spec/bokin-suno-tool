@@ -17,13 +17,14 @@ plan's download allowance exactly as by hand; the run stops when Suno says it is
   stems <tai-khoan> <link>... [--out FOLDER] [--files wav,mp3,midi] [--tempo follow|fixed] [--no-extract] [--limit N]
                                the Stems & MIDI of the songs at the links into FOLDER/"Title - stems" (from Suno's zip):
                                Download → Stems & MIDI → Manage → Auto split; a song whose stems are not made yet gets
-                               Extract pressed (it may use Suno credits; --no-extract: skipped), then Download with
-                               the files and tempo asked for. A song done before is not done again
+                               Extract pressed (it may use Suno credits; --no-extract: skipped), once ever per song
+                               (data/stems-extract.json), then Download with the files and tempo asked for. A song done
+                               before is not done again. A song's own link: that song alone
   selftest                     checks that need no browser
 
 Data (accounts.json, a Chrome profile per account, logs) is in ./data next to the program, or in --data /
 BOKIN_SUNO_DATA. The profiles hold the accounts' Suno sign-ins: never copy or share them. BOKIN_SUNO_STOP names a
-file: once it exists, a download stops before its next song (Bokin Suno Studio's Stop button).
+file: once it exists, a download (or stems) run stops before its next song (Bokin Suno Studio's Stop button).
 """
 import argparse
 import base64
@@ -393,40 +394,82 @@ def download_one(page, catcher, song, fmt, out, label):
             part.unlink()
 
 
-def stems_one(page, catcher, song, out, args):
-    """One song's Stems & MIDI into its "Title - stems" folder (a zip from Suno unpacked). Returns (folder, files)."""
+class Extracted:
+    """The songs whose Extract this tool has pressed (data/stems-extract.json: song id -> when), so it is never
+    pressed twice for a song (each press may use Suno credits): a song whose stems are still not there later is
+    waited for, or left to the person."""
+
+    def __init__(self, data):
+        self.path = data.root / "stems-extract.json"
+        try:
+            self.when = json.loads(self.path.read_text(encoding="utf-8"))
+            if not isinstance(self.when, dict):
+                self.when = {}
+        except (OSError, ValueError):
+            self.when = {}
+
+    def get(self, song_id):
+        value = self.when.get(song_id)
+        return value if isinstance(value, (int, float)) else None
+
+    def note(self, song_id, pressed=True):
+        """Before the press: written first, so a press is never forgotten (a crash right after it). pressed=False:
+        Suno refused it (no credits), so it may be pressed again later."""
+        if pressed:
+            self.when[song_id] = time.time()
+        else:
+            self.when.pop(song_id, None)
+        tmp = self.path.with_name(self.path.name + ".tmp")
+        tmp.write_text(json.dumps(self.when, indent=0), encoding="utf-8")
+        tmp.replace(self.path)
+
+
+def stems_one(page, catcher, song, out, args, extracted):
+    """One song's Stems & MIDI into its "Title - stems" folder (a zip from Suno unpacked). Everything is unpacked
+    and checked in a hidden folder first: the stems folder appears complete or not at all. Returns (folder, files)."""
     part = out.root / f".{song.id}.stems.part"
     shutil.rmtree(part, ignore_errors=True)
-    part.mkdir(parents=True)
+    (part / "got").mkdir(parents=True)
+    unpacked = part / "stems"
     try:
-        title, got = web.download_stems(page, catcher, song, part, log, files=args.stem_files, tempo=args.tempo,
-                                        extract=not args.no_extract)
-        dest = out.stems_dir(song, title)
+        title, got = web.download_stems(page, catcher, song, part / "got", log, files=args.stem_files,
+                                        tempo=args.tempo, extract=not args.no_extract,
+                                        extracted_at=extracted.get(song.id),
+                                        on_extract=lambda pressed: extracted.note(song.id, pressed))
         kept = []
         for path in got:
             if zipfile.is_zipfile(path):
-                kept += folder.unpack(path, dest)
-            else:
-                dest.mkdir(parents=True, exist_ok=True)
-                target = dest / folder.safe_filename(path.name.split("-", 1)[-1], "stem")
+                try:
+                    kept += folder.unpack(path, unpacked)
+                except folder.UnpackError as e:
+                    raise web.SunoError("stuck", str(e)) from e
+            elif folder.stem_file_ok(path):
+                unpacked.mkdir(parents=True, exist_ok=True)
+                target = unpacked / folder.safe_filename(path.name.split("-", 1)[-1], "stem")
                 path.replace(target)
                 kept.append(target)
-        if not kept:
-            raise web.SunoError("stuck", "File stems nhận được không có gì bên trong")
+            else:
+                raise web.SunoError("stuck", f"File nhận được không phải stems (zip, WAV, MP3, MIDI): {path.name}")
+        missing = [k.upper() for k in args.stem_files if k not in folder.stem_kinds(kept)]
+        if missing:
+            raise web.SunoError("stuck", f"File stems Suno gửi không có {', '.join(missing)}")
+        dest = out.stems_dir(song, title)
+        unpacked.replace(dest)
         out.add_stems(song, dest, title)
-        return dest, kept
+        return dest, [dest / p.relative_to(unpacked) for p in kept]
     finally:
         shutil.rmtree(part, ignore_errors=True)
 
 
 def run_stems(page, catcher, songs, out, args, data, name):
     """The Stems & MIDI of these songs, each not done before. Returns (done, failed, stopped reason or "")."""
-    todo = [s for s in songs if not out.done(s.id, folder.STEMS) and not out.not_mine(s.id)]
+    todo = [s for s in songs if not out.stems_ok(s.id) and not out.not_mine(s.id)]
     if getattr(args, "limit", None) is not None:
         todo = todo[:args.limit]
     log.info("Stems & MIDI (%s, tempo %s): %d bài cần tải%s", ", ".join(f.upper() for f in args.stem_files),
              "theo bài" if args.tempo == "follow" else "cố định", len(todo),
              "" if args.no_extract else " (bài chưa tách stems: bấm Extract trên Suno, có thể tốn credit)")
+    extracted = Extracted(data)
     done = failed = stuck = 0
     stopped = ""
     for n, song in enumerate(todo, 1):
@@ -434,12 +477,19 @@ def run_stems(page, catcher, songs, out, args, data, name):
             stopped = "Đã dừng theo yêu cầu. Chạy lại để tải tiếp các bài còn thiếu"
             break
         label = f"[{n}/{len(todo)}] {song.title or song.id}"
+        log.info("Stems & MIDI bài %d/%d: %s", n, len(todo), song.title or song.id)
         try:
-            dest, kept = stems_one(page, catcher, song, out, args)
+            dest, kept = stems_one(page, catcher, song, out, args, extracted)
         except Exception as e:
             log.debug("stems failed", exc_info=True)
             note = describe(e)
             code = getattr(e, "code", "")
+            if code == "not_mine" and out.has_audio(song.id):
+                # downloaded into this folder before, so the song is the account's own: another account is chosen
+                log.error("%s: stems: bài này đã được tải bằng một tài khoản Suno khác. Chọn đúng tài khoản đó rồi "
+                          "bấm lại", label)
+                failed += 1
+                continue
             if code == "not_mine":
                 log.warning("%s: %s", label, note)
                 with contextlib.suppress(folder.FolderError):
@@ -479,7 +529,10 @@ def cmd_stems(args, data):
     with single_run(data), browser(args, data, name, args.headless) as context:
         page = first_page(context)
         songs, bad = gather_songs(data, page, name, account, links)
-        again = [web.Song(sid, title) for sid, title in out.failed(folder.STEMS) if sid not in {s.id for s in songs}]
+        again = []
+        if not all(web.one_song(url) for url in links):  # (a song's own link: that song only)
+            again = [web.Song(sid, title) for sid, title in out.failed(folder.STEMS)
+                     if sid not in {s.id for s in songs}]
         done, failed, stopped = run_stems(page, web.Catcher(context), songs + again, out, args, data, name)
     if stopped:
         log.error("Đã dừng: %s", stopped)
@@ -508,8 +561,10 @@ def cmd_download(args, data):
     stopped = ""
     with single_run(data), browser(args, data, name, args.headless) as context:
         page = first_page(context)
+        # (with --stems a song is known once its stems are there too: the list is read on past songs without them)
         songs, bad = gather_songs(data, page, name, account, links,
-                                  lambda sid: out.done(sid, fmt) or out.not_mine(sid),
+                                  lambda sid: (out.done(sid, fmt) and (not args.stems or out.stems_ok(sid)))
+                                  or out.not_mine(sid),
                                   None if args.full else KNOWN_IN_A_ROW)
         todo = [s for s in songs if not out.done(s.id, fmt) and not out.not_mine(s.id)]
         log.info("Đọc được %d bài: %d bài đã tải từ trước, %d bài cần tải %s vào %s", len(songs),
@@ -705,8 +760,19 @@ def cmd_selftest(args, data):
         try:
             folder.unpack(z, tmp / "big", limit=3)
             check(False, "a zip over the size limit refused")
-        except folder.FolderError:
+        except folder.UnpackError:
             pass
+        (tmp / "broken.zip").write_bytes(z.read_bytes()[:60] + bytes(40) + z.read_bytes()[100:])
+        try:
+            folder.unpack(tmp / "broken.zip", tmp / "broken")
+            check(not zipfile.is_zipfile(tmp / "broken.zip"), "a broken zip refused")
+        except folder.UnpackError:
+            pass
+        (tmp / "a.mid").write_bytes(b"MThd\x00\x00\x00\x06\x00\x01\x00\x01\x00\x60")
+        (tmp / "e.zip").write_bytes(b"<html>403 Forbidden</html>")
+        check(folder.stem_file_ok(tmp / "a.mid") and not folder.stem_file_ok(tmp / "e.zip"), "a stem file, not an error")
+        check(folder.stem_kinds([Path("W/a.wav"), Path("b.MP3"), Path("c.mid")]) == {"wav", "mp3", "midi"}
+              and folder.stem_kinds([Path("x.txt")]) == set(), "the kinds of stems received")
         out = folder.Folder(tmp / "nhac")
         song = web.Song(sid, "Mưa đêm")
         p = out.target(song.title, sid, "wav")
@@ -718,6 +784,64 @@ def cmd_selftest(args, data):
         out.add_stems(song, tmp / "nhac" / "Mưa đêm - stems (2)", song.title)
         check(folder.Folder(tmp / "nhac").done(sid, folder.STEMS)
               and folder.Folder(tmp / "nhac").stems_dir(song, "x").name == "Mưa đêm - stems (2)", "stems listed")
+        check(not out.stems_ok(sid) and out.has_audio(sid), "stems listed but their folder gone: done again")
+        (tmp / "nhac" / "Mưa đêm - stems (2)").mkdir()
+        check(out.stems_ok(sid) and not out.has_audio("11111111-2222-3333-4444-555555555555"), "stems there")
+        mr = web.Song("22222222-2222-3333-4444-555555555555", "Mr. Blue Sky")
+        out.add_stems(mr, out.stems_dir(mr, mr.title), mr.title)
+        check(out.target("Mr", sid, "wav").name == "Mr.wav", "a stems folder's dots are not an extension")
+        check(out.target("Mr. Blue Sky", sid, "wav").name == "Mr. Blue Sky (2).wav"
+              and out.target("Mr. Blue Sky", mr.id, "wav").name == "Mr. Blue Sky.wav",
+              "a song's stems keep its name for its audio")
+        twin = web.Song("33333333-2222-3333-4444-555555555555", "Mr. Blue Sky")
+        check(out.stems_dir(twin, twin.title).name == "Mr. Blue Sky (2) - stems", "a twin's stems: its own name")
+    sel = web.SEL
+    for text in ("Not enough credits", "You don't have enough credits", "You need 10 more credits", "Top up",
+                 "You have 0 credits left", "Insufficient balance", "Get more credits to extract stems."):
+        check(sel["text_no_credits"].search(text), f"no credits: {text}")
+    for text in ("Auto split uses 10 credits.", "This uses 1,000 credits", "Extract Stems and MIDI", "Credits: 2,500"):
+        check(not sel["text_no_credits"].search(text), f"credits left: {text}")
+    check(sel["text_stems_download"].search("Download ▾") and sel["text_stems_download"].search("Download")
+          and not sel["text_stems_download"].search("Downloads 59"), "the stems' Download button")
+    check(sel["text_stem_name"].search("Drums") and sel["text_stem_name"].search("Backing Vocals")
+          and not sel["text_stem_name"].search("Drums of War"), "a stem listed")
+    check(sel["text_stems_busy"].search("Extracting stems...") and sel["text_stems_busy"].search("45%")
+          and not sel["text_stems_busy"].search("Auto extract from a list of 12 instruments."), "stems being made")
+    box = "Download 'Buy Me Love $5' M4A MP3 WAV Stems & MIDI Manage Unlock & Download"
+    check(sel["text_buy"].search(box) and not sel["text_buy"].search(web._without(box, "Buy  Me Love $5")),
+          "a box's text without the song's title")
+    check(web.one_song(f"https://suno.com/song/{sid}") and web.one_song("https://suno.com/s/AbC12")
+          and not web.one_song("https://suno.com/create?wid=1"), "a song's own link")
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        d = Data(tmp / "data")
+        Extracted(d).note(sid)
+        Extracted(d).note("other")
+        Extracted(d).note("other", pressed=False)
+        check(Extracted(d).get(sid) and Extracted(d).get("other") is None, "Extract presses remembered (not refused ones)")
+
+        class Page:
+            def is_closed(self):
+                return False
+
+            def wait_for_timeout(self, ms):
+                pass
+
+        def not_mine(*a, **k):
+            raise web.SunoError("not_mine", "Bài của người khác")
+        real, web.download_stems = web.download_stems, not_mine
+        log.disabled = True  # (its own lines are not the selftest's)
+        try:
+            out = folder.Folder(tmp / "nhac")
+            mine, theirs = web.Song(sid, "Của mình"), web.Song("44444444-2222-3333-4444-555555555555", "Người khác")
+            out.add(mine, out.target(mine.title, sid, "wav"), "wav", mine.title)
+            args = argparse.Namespace(stem_files=web.STEM_FILES, tempo="follow", no_extract=False, limit=None)
+            result = run_stems(Page(), None, [mine, theirs], out, args, d, "suno1")
+            check(result[:2] == (0, 1) and not out.not_mine(sid) and out.not_mine(theirs.id),
+                  f"a song downloaded here is not someone else's: the wrong account {result}")
+        finally:
+            web.download_stems = real
+            log.disabled = False
     check(stem_files("wav, MIDI") == ("wav", "midi"), "stem files")
     for bad in ("", "flac", "wav,,zip"):
         try:

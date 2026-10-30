@@ -14,6 +14,7 @@ from tests.conftest import music, signed_key
 HERE = Path(__file__).resolve().parent
 TOKEN = "t0ken"
 H = {"X-Bokin-Token": TOKEN}
+SONG_A = "https://suno.com/song/0a0a0a0a-0000-4000-8000-00000000000a"
 
 
 @pytest.fixture
@@ -131,6 +132,29 @@ def test_stop_and_busy(client, monkeypatch):
     assert not client.app_state.bokin.busy()
 
 
+def test_stop_stems_between_songs(client, monkeypatch):
+    """Stop lets a Stems & MIDI task finish its song (its Extract has used credits) like a download."""
+    monkeypatch.setenv("STUB_PACE", "0.5")
+    client.app_state.suno.start("stems", ["suno1", "https://suno.com/song/x"], "Tải Stems & MIDI")
+    time.sleep(0.8)
+    assert client.post("/api/suno/stop", headers=H, json={}).json()["stopping"]
+    task = wait_task(client)
+    assert task["state"] == "stopped" and "dừng theo yêu cầu" in "\n".join(task["lines"]) and task["done"] < 5
+
+
+def test_stems_progress(tmp_path):
+    """A download's Stems & MIDI count their own songs on the bar (the downloads' [n/N] counted before)."""
+    from bokin_studio.suno_tasks import SunoTasks, Task
+
+    tasks, task = SunoTasks(tmp_path / "s"), Task("download", [], "Tải nhạc (WAV) và Stems & MIDI")
+    for line in ("12:00:00  [2/2] Bài 2: xong → Bài 2.wav",
+                 "12:00:01  Stems & MIDI (WAV, MP3, MIDI, tempo theo bài): 3 bài cần tải (bài chưa tách stems: ...)"):
+        tasks._line(task, line)
+    assert (task.phase, task.done, task.total) == ("stems", 0, 3)
+    tasks._line(task, "12:00:05  [1/3] Bài 1: stems xong → Bài 1 - stems (18 file)")
+    assert task.to_dict()["phase"] == "stems" and (task.done, task.total) == (1, 3)
+
+
 def test_stop_login(client, monkeypatch):
     monkeypatch.setenv("STUB_LOGIN_WAIT", "60")
     assert client.post("/api/suno/login", headers=H, json={"account": "suno-2"}).status_code == 200
@@ -172,12 +196,13 @@ def make_folder(folder: Path):
     with open(folder / "danh-sach.csv", "w", encoding="utf-8-sig", newline="") as f:
         w = csv.writer(f)
         w.writerow(["ten_bai", "file", "trang_thai", "ghi_chu", "dinh_dang", "link", "luc", "id"])
-        w.writerow(["Mưa đêm", "Mưa đêm.wav", "xong", "", "wav", "https://suno.com/song/a", "2026-10-30 10:00:00", "a"])
+        w.writerow(["Mưa đêm", "Mưa đêm.wav", "xong", "", "wav", SONG_A, "2026-10-30 10:00:00", "a"])
         w.writerow(["'=Không lời", "Không lời.wav", "xong", "", "wav", "", "2026-10-30 11:00:00", "b"])
+        w.writerow(["Cả workspace", "Cả workspace.wav", "xong", "", "wav", "https://suno.com/create?wid=1",
+                    "2026-10-30 11:00:00", "e"])
         w.writerow(["Lỗi", "", "loi", "Suno chưa cho tải", "wav", "", "2026-10-30 12:00:00", "c"])
         w.writerow(["Thoát", "../../thoat.wav", "xong", "", "wav", "", "2026-10-30 12:00:00", "d"])
-        w.writerow(["Mưa đêm", "Mưa đêm - stems", "xong", "", "stems", "https://suno.com/song/a", "2026-10-30 10:05:00",
-                    "a"])
+        w.writerow(["Mưa đêm", "Mưa đêm - stems", "xong", "", "stems", SONG_A, "2026-10-30 10:05:00", "a"])
         w.writerow(["Ngoài", "..", "xong", "", "stems", "", "2026-10-30 10:05:00", "b"])
     (folder / "Mưa đêm - stems" / "WAV").mkdir(parents=True)
     (folder / "Mưa đêm - stems" / "WAV" / "Drums.wav").write_bytes(b"RIFF")
@@ -322,10 +347,11 @@ def test_stems_of_one_song(client, tmp_path):
     assert r.status_code == 200, r.text
     assert wait_task(client)["state"] == "done"
     args = (tmp_path / "suno" / "args.txt").read_text(encoding="utf-8").split("\n")
-    assert args == ["stems", "suno1", "https://suno.com/song/a", "--out", str(folder)]
-    no_link = client.post("/api/suno/stems", headers=H, json={"account": "suno1", "folder": str(folder),
-                                                             "file": "Không lời.wav"})
-    assert no_link.status_code == 400  # (no Suno link in its row)
+    assert args == ["stems", "suno1", SONG_A, "--out", str(folder)]
+    (folder / "Cả workspace.wav").write_bytes(b"RIFF" + bytes(4000))
+    for name in ("Không lời.wav", "Cả workspace.wav"):  # no link in its row; a workspace's link (not one song's)
+        assert client.post("/api/suno/stems", headers=H, json={"account": "suno1", "folder": str(folder),
+                                                              "file": name}).status_code == 400
     for name in ("Secret.wav", "../../thoat.wav"):
         assert client.post("/api/suno/stems", headers=H, json={"account": "suno1", "folder": str(folder),
                                                               "file": name}).status_code == 400

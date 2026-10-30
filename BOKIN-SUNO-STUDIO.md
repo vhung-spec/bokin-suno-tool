@@ -119,12 +119,20 @@ các bước trên Suno: hộp **Download** → **Stems & MIDI · Manage** → *
 MIDI**, tempo **Follow tempo changes** → **Download**.
 
 - **Cả workspace:** tick ô **Tải cả Stems & MIDI** trước khi bấm **Tải về**. Tải xong các bài, app tải tiếp stems của
-  từng bài (ô **Tối đa** cũng giới hạn số bài tải stems).
-- **Từng bài:** trong bảng bài đã tải, bấm **Stems** ở bài muốn tải. Bài đã có stems thì nút đổi thành **Mở stems**.
-- Stems nằm trong thư mục **"Tên bài - stems"** cạnh file nhạc, chia theo `WAV`, `MP3`, `MIDI`.
+  **mọi bài ở link** (cả bài đã tải từ trước). App hỏi lại trước khi chạy. Ô **Tối đa** cũng giới hạn số bài tải
+  stems: lần đầu nên điền một số nhỏ.
+- **Từng bài:** trong bảng bài đã tải, bấm **Stems** ở bài muốn tải (chỉ bài đó). Bài đã có stems thì nút đổi thành
+  **Mở stems**. Chọn đúng tài khoản Suno đã tải bài đó.
+- Stems nằm trong thư mục **"Tên bài - stems"** cạnh file nhạc, chia theo `WAV`, `MP3`, `MIDI`. Thư mục chỉ xuất hiện
+  khi đã nhận đủ các loại file. Thiếu loại nào thì bài đó báo lỗi, lần sau tải lại.
 - **Bài chưa tách stems trên Suno:** app bấm **Extract** (Auto split) rồi chờ tách xong (vài phút). **Việc này có thể
-  tốn credit Suno.** Hết credit (Suno báo *Not enough credits* hoặc mời Upgrade) thì app **dừng, không mua thêm**.
-- Bài đã tải stems rồi thì lần sau không tải lại.
+  tốn credit Suno.** App chỉ bấm khi chắc bài chưa có stems (chờ hộp hiện xong; bài đã có stems hoặc đang tách thì
+  không bấm), và **mỗi bài chỉ bấm một lần**: lần sau chỉ chờ và tải. Nếu lâu rồi vẫn chưa có stems, app báo để
+  anh/chị mở bài trên suno.com xem (cần thì bấm Extract bằng tay).
+- Hết credit (Suno báo *Not enough credits* hoặc mời Upgrade), hoặc hộp Download ghi **Downloads 0**: app **dừng,
+  không bấm gì, không mua thêm**.
+- Bài đã tải stems rồi thì lần sau không tải lại (xoá hoặc chuyển thư mục stems đi thì tải lại).
+- Bấm **Dừng** khi đang tải stems: app tải xong bài đang làm rồi mới dừng.
 - Phần này **chưa thử trên suno.com thật**. Lần đầu nên thử **một bài** (nút **Stems** ở một bài). Lỗi thì gửi ảnh và
   file `.html` trong `%APPDATA%\Bokin\SunoStudio\suno\logs` (che tên tài khoản và email).
 

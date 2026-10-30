@@ -135,11 +135,17 @@ suno download suno1 "https://suno.com/create?wid=..." --out "D:\Nhac\Suno" --ste
 ```
 
 - `stems`: tải Stems & MIDI của các bài ở link (link một bài, workspace hoặc playlist) vào thư mục con
-  **"Tên bài - stems"** (`WAV`, `MP3`, `MIDI`). `download ... --stems`: tải bài xong thì tải tiếp stems của chúng.
-- Bài chưa tách stems trên Suno: tool bấm **Extract** (Auto split), **có thể tốn credit Suno**. Thêm `--no-extract`
-  để bỏ qua các bài đó. Hết credit thì tool dừng, không mua thêm.
-- `--files wav,mp3,midi` (mặc định cả ba), `--tempo follow|fixed` (tempo của MIDI, mặc định `follow`).
-- Trong `danh-sach.csv`, stems của một bài là một dòng `dinh_dang` = `stems`. Bài đã tải stems thì không tải lại.
+  **"Tên bài - stems"** (`WAV`, `MP3`, `MIDI`). Link một bài: chỉ bài đó. Link workspace: cả các bài lần trước tải stems
+  bị lỗi. `download ... --stems`: tải bài xong thì tải tiếp stems của mọi bài ở link (cả bài đã tải từ trước; `--limit`
+  cũng giới hạn số bài tải stems).
+- Bài chưa tách stems trên Suno: tool bấm **Extract** (Auto split), **có thể tốn credit Suno**, chỉ khi hộp Extract
+  Stems and MIDI (chờ nó hiện xong) không có stems nào, đã tách hay đang tách. **Mỗi bài chỉ bấm một lần** (ghi trong
+  `data/stems-extract.json`): lần sau tool chỉ chờ và tải. Thêm `--no-extract` để bỏ qua các bài chưa tách. Hết
+  credit, hoặc hộp Download ghi Downloads 0, thì tool dừng, không bấm gì, không mua thêm.
+- `--files wav,mp3,midi` (mặc định cả ba), `--tempo follow|fixed` (tempo của MIDI, mặc định `follow`). Thiếu loại file
+  nào trong file Suno gửi thì bài đó lỗi (lần sau tải lại); thư mục stems chỉ xuất hiện khi đủ.
+- Trong `danh-sach.csv`, stems của một bài là một dòng `dinh_dang` = `stems`. Bài đã tải stems thì không tải lại (thư
+  mục stems bị xoá hoặc chuyển đi thì tải lại).
 
 ### File danh-sach.csv
 

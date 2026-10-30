@@ -97,7 +97,12 @@ def browser_page(pw, errors):
     context = browser.new_context(permissions=["clipboard-read", "clipboard-write"])
     page = context.new_page()
     page.on("pageerror", lambda e: errors.append(str(e)))
-    page.on("dialog", lambda d: d.accept())  # the confirm() of Xoá and Tắt app
+    page.dialogs = {"seen": [], "dismiss": False}  # the confirm() of Xoá, Tắt app, Tải về with stems: accepted
+
+    def answer(d):
+        page.dialogs["seen"].append(d.message)
+        d.dismiss() if page.dialogs["dismiss"] else d.accept()
+    page.on("dialog", answer)
     return browser, page
 
 
@@ -369,6 +374,17 @@ def test_stems_button(studio):
         page.locator("#library tbody tr", has_text="Phố cũ").get_by_role("button", name="Mở stems").click()
         time.sleep(0.5)
         assert stems in studio["opened"]
+        # Tải về with the stems checkbox ticked asks first (credits): Cancel starts nothing
+        page.fill("#links", f"{fake.url}/create?wid=x")
+        page.fill("#limit", "1")
+        page.dialogs["dismiss"] = True
+        before = page.locator("#task").get_attribute("data-task")
+        page.click("#download")
+        time.sleep(1)
+        page.dialogs["dismiss"] = False
+        asked = page.dialogs["seen"][-1] if page.dialogs["seen"] else ""
+        assert "credit" in asked and "tối đa 1 bài" in asked, asked
+        assert page.locator("#task").get_attribute("data-task") == before, "nothing started"
         page.reload()
         page.click("nav button[data-view=download]")
         assert page.locator("#stems").is_checked(), "the stems checkbox kept"

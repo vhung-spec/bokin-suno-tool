@@ -78,7 +78,11 @@ class FakeSuno:
         self.config = {"auto_signin": True, "user_id": USER_ID, "delivery": "blob", "confirm": False,
                        "downloads_left": None, "paging": "scroll", "prepare_ms": 800, "more_label": "More options",
                        "clerk_global": True, "download_ui": "box", "box_aria": False,
-                       "credits": None, "extract_ms": 1500, "extract_confirm": False, "stems_aria": False}
+                       "credits": None, "extract_ms": 1500, "extract_confirm": False, "stems_aria": False,
+                       # the stems box shows the song's stems this long after it opens (loading them); nothing shown
+                       # while the stems are made (no "Extracting..."); the box confirming Extract stays open this long
+                       # after its Extract is pressed (the button still enabled); a kind left out of the stems zip
+                       "stems_load_ms": 0, "extract_silent": False, "confirm_close_ms": 0, "stems_drop": ""}
         self.sessions = set()
         self.signins = 0
         self.songs = {}
@@ -179,6 +183,7 @@ class FakeSuno:
                 if len(parts) == 2 and parts[0] == "stemszip" and parts[1].endswith(".zip"):
                     sid = parts[1][:-4]
                     files = [f for f in q.get("files", [""])[0].split(",") if f in ("wav", "mp3", "midi")]
+                    files = [f for f in files if f != fake.config["stems_drop"]]
                     if fake.stems.get(sid) != "ready" or not files:
                         return self._send(404, "not found")
                     return self._send(200, stems_zip(sid, files), "application/zip")
@@ -215,7 +220,10 @@ class FakeSuno:
                                       "left": fake.config["downloads_left"], "unlocked": parts[1] in fake.counted,
                                       "stems": fake.stems.get(parts[1], "none"),
                                       "extract_confirm": fake.config["extract_confirm"],
-                                      "stems_aria": fake.config["stems_aria"]})
+                                      "stems_aria": fake.config["stems_aria"],
+                                      "stems_load_ms": fake.config["stems_load_ms"],
+                                      "extract_silent": fake.config["extract_silent"],
+                                      "confirm_close_ms": fake.config["confirm_close_ms"]})
                     similar = "".join(
                         f'<div class="row"><a href="/song/{s}">{html.escape(fake.songs[s]["title"])}</a>'
                         f'<button aria-label="More options">...</button></div>' for s in fake.similar)
@@ -443,7 +451,7 @@ function openBox() {  // suno.com, October 2026: the download box
     return b;
   });
   const manage = el('button'); manage.innerHTML = ICON + '<span>Manage</span>';  // (its own icon)
-  manage.onclick = openStems;
+  manage.onclick = () => { openStems(); setTimeout(() => dlg.remove(), 600); };  // (the box goes, as a portal does)
   const stems = el('div'); stems.append(el('span', 'Stems & MIDI'), manage);
   function paint() {  // the check mark on a chosen row is all that tells (no aria- attribute, as on suno.com)
     for (const b of rows) {
@@ -473,6 +481,7 @@ function openBox() {  // suno.com, October 2026: the download box
         fmts.forEach((f, i) => setTimeout(() => deliver(f), cfg.prepare_ms + i * 300));
       });
   };
+  if (!dlg.isConnected) document.body.insertBefore(dlg, $('#stemsdlg'));
   dlg.replaceChildren(close, el('h2', `Download '${cfg.title}'`), ...rows, stems, go, plan);
   paint();
   dlg.hidden = false;
@@ -495,7 +504,7 @@ const CARET = '<svg width="10" height="10" aria-hidden="true"><path d="M1 3l4 4 
 function openStems() {
   fetch('/api/stems-open?id=' + cfg.id, {method: 'POST'});
   const box = $('#stemsdlg');
-  let state = cfg.stems;
+  let state = cfg.stems_load_ms ? 'loading' : cfg.stems;  // (loading: nothing shown yet)
   const close = el('button'); close.setAttribute('aria-label', 'Close'); close.innerHTML = ICON;
   close.onclick = () => { box.hidden = true; };
   const tabs = ['Auto split', 'Split from mix', 'Advanced split'].map((t, i) => {
@@ -512,7 +521,7 @@ function openStems() {
         one.onclick = () => fetch('/api/pressed?what=one-stem', {method: 'POST'});
         const row = el('div'); row.append(el('span', n), one); list.append(row);
       }
-    } else if (state === 'extracting') list.append(el('p', 'Extracting stems...'));
+    } else if (state === 'extracting' && !cfg.extract_silent) list.append(el('p', 'Extracting stems...'));
     dl.hidden = state !== 'ready';
   }
   function poll() {
@@ -536,15 +545,20 @@ function openStems() {
   extract.onclick = () => {
     if (!cfg.extract_confirm) return start();
     const ask = $('#askdlg'), yes = el('button', 'Extract'), no = el('button', 'Cancel');
-    yes.onclick = () => { ask.hidden = true; start(); };
+    yes.onclick = () => { start(); setTimeout(() => { ask.hidden = true; }, cfg.confirm_close_ms); };
     no.onclick = () => { ask.hidden = true; };
-    ask.replaceChildren(el('h2', 'Extract stems?'), el('p', 'This uses 10 credits.'), no, yes);
+    ask.replaceChildren(el('h2', 'Extract Stems and MIDI?'), el('p', `Auto split for '${cfg.title}' uses 10 credits.`),
+                        no, yes);
     ask.hidden = false;
   };
   dl.onclick = openFiles;
   box.replaceChildren(close, el('h2', 'Extract Stems and MIDI'), el('b', cfg.title), ...tabs,
                       el('p', 'Auto extract from a list of 12 instruments.'), extract, list, dl);
   render();
+  if (state === 'extracting') poll();
+  if (cfg.stems_load_ms) setTimeout(() => fetch('/api/stems/' + cfg.id).then(r => r.json()).then(j => {
+    state = j.state; render(); if (state === 'extracting') poll();
+  }), cfg.stems_load_ms);
   box.hidden = false;
 }
 function openFiles() {

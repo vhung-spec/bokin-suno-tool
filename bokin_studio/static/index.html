@@ -357,7 +357,8 @@ function renderTask(t) {
   lastTask = t;
   $("task").hidden = false; $("task").dataset.task = t.id;
   $("taskLabel").textContent = t.label;
-  const stopping = t.kind === "download" ? "Đang dừng sau bài đang tải…" : "Đang dừng…";
+  const bySong = t.kind === "download" || t.kind === "stems";  // (they stop after the song being done)
+  const stopping = bySong ? "Đang dừng sau bài đang tải…" : "Đang dừng…";
   $("taskState").textContent = t.stopping && t.state === "running" ? stopping : STATES[t.state] || t.state;
   $("taskState").className = "state-" + t.state;
   $("stop").hidden = t.state !== "running";
@@ -371,9 +372,9 @@ function renderTask(t) {
   lines = t.line_count;
   if (atEnd) log.scrollTop = log.scrollHeight;
   const bar = $("taskBar");
-  bar.hidden = !(t.kind === "download" && t.total);
+  bar.hidden = !(bySong && t.total);
   bar.firstElementChild.style.width = t.total ? `${Math.round(100 * t.done / t.total)}%` : "0";
-  $("taskCount").textContent = t.kind === "download" && t.total ? `Bài ${t.done}/${t.total}` : "";
+  $("taskCount").textContent = bySong && t.total ? `${t.phase === "stems" ? "Stems" : "Bài"} ${t.done}/${t.total}` : "";
   const acc = $("accountTask").querySelector("pre");
   if (acc && ["login", "check", "remove"].includes(t.kind)) {
     acc.textContent = log.textContent;
@@ -538,7 +539,14 @@ async function init() {
   };
   $("checkAll").onclick = () => runTask("/api/suno/check", {});
   $("listSongs").onclick = () => { if (!needAccount()) return; saveSettings(); runTask("/api/suno/list", downloadBody()); };
-  $("download").onclick = () => { if (!needAccount()) return; saveSettings(); runTask("/api/suno/download", downloadBody()); };
+  $("download").onclick = () => {
+    if (!needAccount()) return;
+    const limit = $("limit").value ? ` (tối đa ${$("limit").value} bài)` : "";
+    if ($("stems").checked && !confirm("Tải cả Stems & MIDI: app tải stems của các bài ở link này" + limit + ", kể cả "
+        + "bài đã tải từ trước. Bài chưa tách stems trên Suno thì app bấm Extract: có thể tốn credit Suno. Muốn thử "
+        + "ít bài trước thì điền ô Tối đa. Tiếp tục?")) return;
+    saveSettings(); runTask("/api/suno/download", downloadBody());
+  };
   $("stop").onclick = stopTask;
   $("copyLyrics").onclick = () => current && navigator.clipboard.writeText(current.lyrics)
     .then(() => toast("Đã chép lời gốc."), () => toast("Không chép được: bôi đen rồi bấm Ctrl+C."));

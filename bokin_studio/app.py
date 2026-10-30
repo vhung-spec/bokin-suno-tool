@@ -43,6 +43,7 @@ NO_TOKEN = {"/", "/favicon.ico", "/logo.svg", "/api/ping"} | {f"/loi-dong-am/{na
 FREE_PATHS = NO_TOKEN | {"/api/info", "/api/license", "/api/update", "/api/update/check", "/api/update/install",
                          "/api/quit", "/api/shutdown"}
 ACCOUNT = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,39}")  # as suno/bokin_suno.py
+SONG_LINK = re.compile(r"https?://[A-Za-z0-9.:-]+/song/[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$")
 # the Master frame: Bokin Suno Master's page without its own header (title, version, update, quit: the Studio's)
 MASTER_STYLE = "<style>header { display: none !important; } main { padding-top: 12px !important; }</style>"
 # the Đổi lời frame: Lời Đồng Âm (its file unchanged: it is also published on its own) in the app's look, the colours,
@@ -451,8 +452,8 @@ def create_app(token: str, port: int = paths.PORTS[0], extra_hosts: tuple = (), 
         folder = _folder(body.get("folder"))
         row = library_call(library.song_row, folder, body.get("file"))
         link = row.get("link", "")
-        if not link.startswith(("https://", "http://")) or len(link) > 2000:
-            raise HTTPException(400, "Bài này không có link Suno trong danh-sach.csv")
+        if not SONG_LINK.match(link):  # (one song's own link: never a workspace's, whatever the list says)
+            raise HTTPException(400, "Bài này không có link bài hát Suno trong danh-sach.csv")
         return run("stems", [name, link, "--out", str(folder)], f"Tải Stems & MIDI: {row['title']}", body)
 
     @app.post("/api/suno/stop")

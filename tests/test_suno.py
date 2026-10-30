@@ -7,7 +7,9 @@ song (none for an instrumental), the download box where several rows can be chos
 "uses 1 download" box opening in a new tab, several links at once (one of them bad), a Load more button, pages behind a
 Next page button that stays enabled on the last page, the Stop button of Bokin Suno Studio, a Suno page
 without window.Clerk (only Clerk's cookies tell who is signed in), share links (suno.com/s/...: the one song, never
-the Similar list beside it), someone else's song (never downloaded), the plan's downloads used up (nothing
+the Similar list beside it), someone else's song (never downloaded), Stems & MIDI (made already, shown late, extracted
+after a confirm box that stays open, Extract never pressed twice for a song, stems made by hand, a zip without the
+MIDI, a title with Buy in it, the credits or the plan's downloads used up), the plan's downloads used up (nothing
 bought), a changed Suno page, the wrong account, a sign-out, removing the account.
 
   python tests/test_suno.py [--headless] [--chrome PATH] [--keep]
@@ -57,7 +59,7 @@ def main():
 
     fake = FakeSuno()
     titles = ["Mưa đêm", "Mưa đêm", "../../thoát ra", "CON", '=cmd|" /C calc"!A0', "<b>Đậm</b> & \"nháy\"",
-              unicodedata.normalize("NFD", "Phố cũ")] + [f"Lofi số {n}" for n in range(1, 15)]
+              unicodedata.normalize("NFD", "Phố cũ")] + [f"Lofi số {n}" for n in range(1, 14)] + ["Buy Me Upgrade $5"]
     ids = [fake.add_song(t, lyrics="" if t == "CON" else None) for t in titles[:10]]  # CON: an instrumental
     making = fake.add_song("Đang tạo", status="streaming")  # in the middle of the list
     ids += [fake.add_song(t) for t in titles[10:]]
@@ -75,13 +77,14 @@ def main():
         base += ["--chrome", opts.chrome]
     link = f"{fake.url}/create?wid={WORKSPACE}"
 
-    def cli(*args, expect=0, contains=None):
+    def cli(*args, expect=0, contains=None, extra=None):
         print(f"\n$ suno {' '.join(args)}", flush=True)
         output = tmp / "output.txt"
         if os.environ.get("BOKIN_SUNO_CMD"):
             output.write_text("", encoding="utf-8")
             env["BOKIN_STUDIO_OUTPUT"] = str(output)
-        r = subprocess.run(base + list(args), env=env, capture_output=True, text=True, encoding="utf-8",
+        r = subprocess.run(base + list(args), env=dict(env, **(extra or {})), capture_output=True, text=True,
+                           encoding="utf-8",
                            errors="replace", timeout=900)
         out = r.stdout + r.stderr
         if os.environ.get("BOKIN_SUNO_CMD"):
@@ -272,20 +275,82 @@ def main():
         cli("stems", "suno1", f"{fake.url}/song/{ids[2]}", "--out", str(nhac), contains="0 bài cần tải")
         check(len(fake.stems_downloads) == 1, "stems done before are not downloaded again")
 
-        print("== download --stems: a new song downloaded, its stems extracted (Extract, after a box asking first)")
-        fake.config["extract_confirm"] = True
+        print("== download --stems: a new song downloaded, its stems extracted (Extract, after a box asking first that "
+              "stays open a while: pressed once)")
+        fake.config.update(extract_confirm=True, confirm_close_ms=4000)
         fresh = fake.add_song("Bài tách stems")
         cli("download", "suno1", link, "--out", str(nhac), "--stems", "--limit", "1", contains="1 bài tải xong")
         check(fake.extract_clicks == [fresh] and fake.stems_downloads[-1][0] == fresh, "Extract pressed for it, once")
         check(any((nhac / r["file"]).is_dir() for r in read_list(nhac) if r["id"] == fresh and r["dinh_dang"] ==
                   "stems"), "its stems folder")
-        fake.config["extract_confirm"] = False
+        fake.config.update(extract_confirm=False, confirm_close_ms=0)
 
         print("== stems: only the files asked for, the MIDI's tempo fixed")
         fake.stems[ids[3]] = "ready"
         cli("stems", "suno1", f"{fake.url}/song/{ids[3]}", "--out", str(nhac), "--files", "wav,midi", "--tempo",
             "fixed", contains="stems của 1 bài tải xong")
         check(fake.stems_downloads[-1] == (ids[3], "wav,midi", "fixed"), f"WAV and MIDI, fixed {fake.stems_downloads}")
+
+        def song_link(sid):
+            return f"{fake.url}/song/{sid}"
+
+        print("== stems shown late (the box loads them after it opens): no Extract")
+        fake.config["stems_load_ms"] = 5000
+        late = fake.add_song("Stems hiện chậm", in_workspace=False)
+        fake.stems[late] = "ready"
+        cli("stems", "suno1", song_link(late), "--out", str(nhac), contains="stems của 1 bài tải xong")
+        check(late not in fake.extract_clicks, "Extract not pressed for a song with stems")
+        fake.config["stems_load_ms"] = 0
+
+        print("== Extract pressed once: Suno slow and silent; the next runs wait for it and never press it again")
+        fake.config.update(extract_silent=True, extract_ms=600_000)
+        slow = fake.add_song("Tách chậm", in_workspace=False)
+        cli("stems", "suno1", song_link(slow), "--out", str(nhac), expect=1, contains="không bấm Extract nữa",
+            extra={"BOKIN_SUNO_STEMS_WAIT": "8"})
+        check(fake.extract_clicks.count(slow) == 1, "Extract pressed once")
+        cli("stems", "suno1", song_link(slow), "--out", str(nhac), expect=1, contains="Tool đã bấm Extract cho bài này",
+            extra={"BOKIN_SUNO_STEMS_WAIT": "8"})
+        check(fake.extract_clicks.count(slow) == 1, "not pressed again")
+        opened = len(fake.stems_opened)
+        fake.stems[ids[5]] = "ready"
+        cli("stems", "suno1", song_link(ids[5]), "--out", str(nhac), contains="stems của 1 bài tải xong")
+        check(fake.stems_opened[opened:] == [ids[5]], "a song's own link: that song alone, not the ones failed before")
+        fake.stems[slow] = "ready"
+        cli("stems", "suno1", song_link(slow), "--out", str(nhac), contains="stems của 1 bài tải xong")
+        check(fake.extract_clicks.count(slow) == 1, "its stems downloaded once made, Extract never pressed again")
+        fake.config.update(extract_silent=False, extract_ms=1500)
+
+        print("== stems being made (Extract pressed by hand on suno.com): waited for, not pressed")
+        hand = fake.add_song("Tách tay", in_workspace=False)
+        fake.stems[hand] = "extracting"
+        cli("stems", "suno1", song_link(hand), "--out", str(nhac), expect=1, contains="vẫn đang tách stems",
+            extra={"BOKIN_SUNO_STEMS_WAIT": "5"})
+        check(hand not in fake.extract_clicks, "Extract not pressed")
+
+        print("== the stems' zip without the MIDI asked for: not done, no half folder, done on the next run")
+        fake.config["stems_drop"] = "midi"
+        drop = fake.add_song("Thiếu MIDI", in_workspace=False)
+        fake.stems[drop] = "ready"
+        cli("stems", "suno1", song_link(drop), "--out", str(nhac), expect=1, contains="không có MIDI")
+        check(not any(r["id"] == drop and r["trang_thai"] == "xong" for r in read_list(nhac)), "not listed as done")
+        check(not any(p.name.startswith("Thiếu MIDI") for p in nhac.iterdir()), "no half stems folder")
+        fake.config["stems_drop"] = ""
+        cli("stems", "suno1", song_link(drop), "--out", str(nhac), contains="stems của 1 bài tải xong")
+        check((nhac / "Thiếu MIDI - stems" / "MIDI" / "Drums.mid").is_file(), "its stems at last")
+
+        print("== a song titled with Buy in it: not taken for a box offering to buy")
+        buy = fake.add_song("Buy Me Love $5", in_workspace=False)
+        fake.stems[buy] = "ready"
+        cli("stems", "suno1", song_link(buy), "--out", str(nhac), contains="stems của 1 bài tải xong")
+
+        print("== stems with the plan's downloads used up (Downloads 0): stopped before Manage")
+        fake.config["downloads_left"] = 0
+        zero = fake.add_song("Hết lượt stems", in_workspace=False)
+        fake.stems[zero] = "ready"
+        opened = len(fake.stems_opened)
+        cli("stems", "suno1", song_link(zero), "--out", str(nhac), expect=1, contains="Downloads 0")
+        check(len(fake.stems_opened) == opened and zero not in fake.extract_clicks, "nothing pressed")
+        fake.config["downloads_left"] = None
 
         print("== stems with the credits used up: stopped, Upgrade never pressed")
         fake.config["credits"] = 0

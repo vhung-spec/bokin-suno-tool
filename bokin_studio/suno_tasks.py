@@ -7,9 +7,10 @@ bokin_studio suno ...` from the source folder. Its data folder (accounts, a Chro
 is the app's suno\\ folder. Everything Suno-side keeps the command line's rules: only Suno's own Download button,
 never Buy/Upgrade, stop when the plan's downloads are used up.
 
-Stop: a download stops before its next song once the stop file exists (BOKIN_SUNO_STOP), never in the middle of a
-song (Suno has counted its download by then); only a download that has not stopped long after the longest a song
-can take is ended. Any other task (a sign-in waiting for its window) is ended at once.
+Stop: a download (or a Stems & MIDI task) stops before its next song once the stop file exists (BOKIN_SUNO_STOP),
+never in the middle of a song (Suno has counted its download, or its stems' credits, by then); only one that has not
+stopped long after the longest a song can take is ended. Any other task (a sign-in waiting for its window) is ended
+at once.
 """
 
 import os
@@ -22,9 +23,12 @@ import time
 from pathlib import Path
 
 PROGRESS = re.compile(r"^\d\d:\d\d:\d\d  \[(\d+)/(\d+)\] ")  # "12:00:00  [3/20] Title: ...", not a title's own [3/4]
+STEMS_START = re.compile(r"^\d\d:\d\d:\d\d  Stems & MIDI \(.*\): (\d+) bài cần tải")  # then [n/N] count the stems
 LISTED = re.compile(r"^(\d+)\t(.*)\t(https?://\S+)$")
 KEEP_LINES = 400
-STOP_GRACE = 15 * 60  # seconds a download has to stop by itself (one song: up to 2 x 5 minutes) before it is ended
+STOP_GRACE = 30 * 60  # seconds a download has to stop by itself before it is ended (one song: up to 2 x 5
+                      # minutes; its stems: up to 20 minutes, suno/web.py STEMS_WAIT)
+BY_SONG = ("download", "stems")  # the tasks that stop between two songs
 
 
 class Busy(Exception):
@@ -68,6 +72,7 @@ class Task:
         self.first = 0  # how many lines were dropped from the front of `lines` (KEEP_LINES): line numbers go on
         self.songs = []  # the songs a "list" printed: {"n", "title", "link"}
         self.done = self.total = 0
+        self.phase = ""  # "stems" once a download's Stems & MIDI (or a stems task) has started
         self.started, self.ended = time.time(), None
         self.stopping = False
         self.proc = None
@@ -79,7 +84,8 @@ class Task:
         return {"id": self.id, "kind": self.kind, "label": self.label, "state": self.state, "code": self.code,
                 "lines": lines[max(0, since - first):], "line_count": first + len(lines),
                 "songs": self.songs if songs and self.state != "running" else [],
-                "song_count": len(self.songs), "done": self.done, "total": self.total, "started": self.started,
+                "song_count": len(self.songs), "done": self.done, "total": self.total, "phase": self.phase,
+                "started": self.started,
                 "ended": self.ended, "stopping": self.stopping}
 
 
@@ -160,6 +166,9 @@ class SunoTasks:
         m = PROGRESS.search(line)
         if m:
             task.done, task.total = int(m.group(1)), int(m.group(2))
+        m = STEMS_START.search(line)
+        if m:
+            task.phase, task.done, task.total = "stems", 0, int(m.group(1))
         task.lines.append(line)
         if len(task.lines) > KEEP_LINES:
             drop = len(task.lines) - KEEP_LINES
@@ -172,7 +181,7 @@ class SunoTasks:
         if not task or task.state != "running":
             return False
         task.stopping = True
-        if task.kind == "download" and task.stop_file:
+        if task.kind in BY_SONG and task.stop_file:
             try:
                 task.stop_file.write_text("", encoding="utf-8")
             except OSError:
