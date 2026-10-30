@@ -112,6 +112,22 @@ Bảng **Bài đã tải trong thư mục này** (thẻ Tải nhạc) liệt kê
 
 Cách dùng Lời Đồng Âm đầy đủ: phần **Lời Đồng Âm** trong [README.md](README.md).
 
+## Tải Stems & MIDI (tuỳ chọn)
+
+Stems là từng nhạc cụ tách riêng (trống, bass, guitar, piano, giọng...), MIDI là nốt nhạc của chúng. App tải qua đúng
+các bước trên Suno: hộp **Download** → **Stems & MIDI · Manage** → **Auto split** → **Download** → chọn **MP3, WAV,
+MIDI**, tempo **Follow tempo changes** → **Download**.
+
+- **Cả workspace:** tick ô **Tải cả Stems & MIDI** trước khi bấm **Tải về**. Tải xong các bài, app tải tiếp stems của
+  từng bài (ô **Tối đa** cũng giới hạn số bài tải stems).
+- **Từng bài:** trong bảng bài đã tải, bấm **Stems** ở bài muốn tải. Bài đã có stems thì nút đổi thành **Mở stems**.
+- Stems nằm trong thư mục **"Tên bài - stems"** cạnh file nhạc, chia theo `WAV`, `MP3`, `MIDI`.
+- **Bài chưa tách stems trên Suno:** app bấm **Extract** (Auto split) rồi chờ tách xong (vài phút). **Việc này có thể
+  tốn credit Suno.** Hết credit (Suno báo *Not enough credits* hoặc mời Upgrade) thì app **dừng, không mua thêm**.
+- Bài đã tải stems rồi thì lần sau không tải lại.
+- Phần này **chưa thử trên suno.com thật**. Lần đầu nên thử **một bài** (nút **Stems** ở một bài). Lỗi thì gửi ảnh và
+  file `.html` trong `%APPDATA%\Bokin\SunoStudio\suno\logs` (che tên tài khoản và email).
+
 ## Bước 4: master
 
 - Ở bảng bài đã tải: chọn **Kiểu master** (ví dụ **Nghe trực tuyến**, **Jazz**), rồi bấm **Master** ở bài muốn

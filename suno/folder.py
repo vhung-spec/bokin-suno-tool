@@ -12,10 +12,13 @@ import csv
 import io
 import re
 import unicodedata
+import zipfile
 from datetime import datetime
 from pathlib import Path
 
 LIST_NAME = "danh-sach.csv"
+STEMS = "stems"  # the dinh_dang of a song's Stems & MIDI in the list; its file is the folder that holds them
+UNPACK_MAX = 8_000_000_000  # bytes a stems zip may unpack to
 COLUMNS = ("ten_bai", "file", "trang_thai", "ghi_chu", "dinh_dang", "link", "luc", "id")
 DONE, FAILED, NOT_MINE = "xong", "loi", "nguoi_khac"  # nguoi_khac: someone else's song, never downloaded
 WINDOWS_RESERVED = {"con", "prn", "aux", "nul"} | {f"{p}{n}" for p in ("com", "lpt") for n in range(1, 10)}
@@ -65,6 +68,42 @@ def audio_ok(path, fmt):
     if fmt == "wav":
         return head[:4] == b"RIFF" and head[8:12] == b"WAVE"
     return head[:3] == b"ID3" or (len(head) > 1 and head[0] == 0xFF and head[1] & 0xE0 == 0xE0)
+
+
+def unpack(zip_path, dest, limit=UNPACK_MAX):
+    """The files of a zip into `dest`, its folders kept. The names come from Suno and are not trusted: no "..", no
+    drive or absolute path, Windows-safe names, nothing outside `dest`, at most `limit` bytes in all. Returns the files
+    written."""
+    dest = Path(dest)
+    dest.mkdir(parents=True, exist_ok=True)
+    root = dest.resolve()
+    written, total = [], 0
+    try:
+        with zipfile.ZipFile(zip_path) as z:
+            for info in z.infolist():
+                if info.is_dir():
+                    continue
+                parts = [p for p in re.split(r"[\\/]", info.filename) if p.strip() not in ("", ".", "..")]
+                parts = [safe_filename(p, "file") for p in parts]
+                if not parts:
+                    continue
+                target = root.joinpath(*parts)
+                if root not in target.resolve().parents:
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with z.open(info) as src, open(target, "wb") as out:
+                    while True:
+                        block = src.read(1 << 20)
+                        if not block:
+                            break
+                        total += len(block)
+                        if total > limit:
+                            raise FolderError("File stems giải nén ra quá lớn")
+                        out.write(block)
+                written.append(target)
+    except zipfile.BadZipFile as e:
+        raise FolderError(f"File stems nhận được hỏng: {e}") from e
+    return written
 
 
 class Folder:
@@ -130,6 +169,23 @@ class Folder:
 
     def add_failure(self, song, fmt, note):
         self._set(song, fmt, song.title, FAILED, note=note)
+
+    def stems_dir(self, song, title):
+        """The folder for a song's Stems & MIDI, next to its audio file and named after it: "Title - stems"."""
+        row = self.rows.get((song.id, STEMS)) or {}
+        if row.get("file"):
+            return self.root / row["file"]
+        audio = next((r["file"] for (sid, f), r in self.rows.items() if sid == song.id and f != STEMS
+                      and r.get("file")), "")
+        stem = Path(audio).stem if audio else safe_filename(title, f"suno-{song.id[:8]}")
+        taken = {(r.get("file") or "").lower() for r in self.rows.values()}
+        name, n = f"{stem} - stems", 2
+        while name.lower() in taken or (self.root / name).exists():
+            name, n = f"{stem} - stems ({n})", n + 1
+        return self.root / name
+
+    def add_stems(self, song, path, title):
+        self._set(song, STEMS, title, DONE, file=Path(path).name)
 
     def add_not_mine(self, song, fmt, note):
         self._set(song, fmt, song.title, NOT_MINE, note=note)

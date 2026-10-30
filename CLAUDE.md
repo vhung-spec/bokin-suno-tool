@@ -59,6 +59,13 @@
   chia sẻ `suno.com/s/...` dẫn tới một bài; trang bài có cột Similar (bài người khác): không bao giờ đọc làm danh
   sách. Suno giả lập có cả hai giao diện (`download_ui` "box"/"menu"), hộp chọn nhiều dòng như thật, và
   `paging` "pages" như trang Create.
+- Stems & MIDI (`web.download_stems`, lệnh `stems`, `download --stems`; theo 3 ảnh chủ gửi 30/10/2026, **chưa thử trên
+  suno.com thật**): hộp Download → Stems & MIDI · Manage → hộp "Extract Stems and MIDI" (Auto split / Split from mix /
+  Advanced split, nút Extract, các stem đã tách mỗi cái có biểu tượng Download riêng: không bấm, nút "Download ▾" cuối
+  hộp) → hộp "Download · Auto split · 6 stems" (ô MP3, WAV, MIDI; Tempo behavior Fixed / Follow tempo changes; Cancel /
+  Download) → một file zip, giải nén an toàn (`folder.unpack`) vào "Tên bài - stems". Chủ chọn (30/10/2026): bài chưa
+  tách thì bấm Extract (có thể tốn credit), tải WAV + MP3 + MIDI, Follow tempo changes; hết credit / Upgrade thì dừng.
+  Suno giả lập có đủ các hộp này (`stems`, `credits`, `extract_confirm`, `stems_aria`).
 - Lời bài hát: tải xong một bài, tool lưu lời đang hiện trên trang bài hát vào `Tên bài.txt` cạnh file nhạc
   (`web.JS_LYRICS`, `SEL["lyrics"]`; chưa thử trên suno.com thật). Một tên file (bỏ đuôi) thuộc về một bài.
 - Máy chủ phiên làm việc chỉ có Chromium của Playwright, không có Google Chrome: ở đó `tests/test_suno.py` hỏng từ

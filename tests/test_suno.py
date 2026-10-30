@@ -256,6 +256,45 @@ def main():
         check(fake.similar[0] not in fake.counted, "a share link to someone else's song: nothing downloaded")
         fake.workspace.remove(theirs)
 
+        print("== Stems & MIDI of a song whose stems are made already: no Extract, one zip unpacked in its folder")
+        check(fake.stems_opened == [], "Stems & MIDI → Manage never opened by a plain download")
+        fake.stems[ids[2]] = "ready"
+        picked = len(fake.picked)
+        cli("stems", "suno1", f"{fake.url}/song/{ids[2]}", "--out", str(nhac), contains="stems của 1 bài tải xong")
+        row = {(r["id"], r["dinh_dang"]): r for r in read_list(nhac)}.get((ids[2], "stems"), {})
+        stems = nhac / row.get("file", "?")
+        check(row.get("trang_thai") == "xong" and stems.name.endswith(" - stems"), f"listed: {row.get('file')}")
+        check(all((stems / k / f"Drums.{e}").is_file() for k, e in (("WAV", "wav"), ("MP3", "mp3"), ("MIDI", "mid"))),
+              "WAV, MP3 and MIDI stems in their folders")
+        check(not (nhac / "evil.txt").exists() and not (tmp / "evil.txt").exists(), "nothing written outside the folder")
+        check(fake.extract_clicks == [] and len(fake.picked) == picked, "no Extract, no song download pressed")
+        check(fake.stems_downloads[-1][1:] == ("wav,mp3,midi", "follow"), f"files and tempo {fake.stems_downloads}")
+        cli("stems", "suno1", f"{fake.url}/song/{ids[2]}", "--out", str(nhac), contains="0 bài cần tải")
+        check(len(fake.stems_downloads) == 1, "stems done before are not downloaded again")
+
+        print("== download --stems: a new song downloaded, its stems extracted (Extract, after a box asking first)")
+        fake.config["extract_confirm"] = True
+        fresh = fake.add_song("Bài tách stems")
+        cli("download", "suno1", link, "--out", str(nhac), "--stems", "--limit", "1", contains="1 bài tải xong")
+        check(fake.extract_clicks == [fresh] and fake.stems_downloads[-1][0] == fresh, "Extract pressed for it, once")
+        check(any((nhac / r["file"]).is_dir() for r in read_list(nhac) if r["id"] == fresh and r["dinh_dang"] ==
+                  "stems"), "its stems folder")
+        fake.config["extract_confirm"] = False
+
+        print("== stems: only the files asked for, the MIDI's tempo fixed")
+        fake.stems[ids[3]] = "ready"
+        cli("stems", "suno1", f"{fake.url}/song/{ids[3]}", "--out", str(nhac), "--files", "wav,midi", "--tempo",
+            "fixed", contains="stems của 1 bài tải xong")
+        check(fake.stems_downloads[-1] == (ids[3], "wav,midi", "fixed"), f"WAV and MIDI, fixed {fake.stems_downloads}")
+
+        print("== stems with the credits used up: stopped, Upgrade never pressed")
+        fake.config["credits"] = 0
+        broke = fake.add_song("Hết credit")
+        cli("download", "suno1", link, "--out", str(nhac), "--stems", expect=1, contains="hết credit")
+        check(broke not in fake.extract_clicks and "upgrade" not in fake.pressed, "nothing bought")
+        fake.config["credits"] = None
+        check(fake.pressed == [], f"never pressed: a single stem's own Download, Upgrade ({fake.pressed})")
+
         print("== the plan's downloads used up")
         fake.config["downloads_left"] = 1
         later = [fake.add_song("Hết lượt 1"), fake.add_song("Hết lượt 2")]

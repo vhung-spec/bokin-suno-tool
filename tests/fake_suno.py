@@ -29,7 +29,9 @@ import json
 import secrets
 import struct
 import threading
+import time
 import uuid
+import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -48,6 +50,23 @@ def audio_bytes(song_id, fmt):
     return b"ID3\x04\x00\x00\x00\x00\x00\x00" + body
 
 
+STEM_NAMES = ("Drums", "Bass", "Guitar", "Piano", "Vocals", "Other")
+
+
+def stems_zip(song_id, files):
+    """A song's Stems & MIDI as Suno would send them: one zip, a folder per kind, and a name trying to get out."""
+    import io
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        for kind in files:
+            for name in STEM_NAMES:
+                ext = {"wav": "wav", "mp3": "mp3", "midi": "mid"}[kind]
+                z.writestr(f"{kind.upper()}/{name}.{ext}", audio_bytes(f"{song_id}-{name}", kind if kind != "midi"
+                                                                        else "mp3")[:3000])
+        z.writestr("../evil.txt", "a name that tries to leave the folder")
+    return buf.getvalue()
+
+
 def default_lyrics(title):
     """A song's lyrics: tags, verses, a blank line, and text that must stay text (lyrics are not trusted)."""
     return (f"[Verse]\nSilent night, holy night\nAll is calm, all is bright\n\n[Chorus]\n{title}\n"
@@ -58,7 +77,8 @@ class FakeSuno:
     def __init__(self):
         self.config = {"auto_signin": True, "user_id": USER_ID, "delivery": "blob", "confirm": False,
                        "downloads_left": None, "paging": "scroll", "prepare_ms": 800, "more_label": "More options",
-                       "clerk_global": True, "download_ui": "box", "box_aria": False}
+                       "clerk_global": True, "download_ui": "box", "box_aria": False,
+                       "credits": None, "extract_ms": 1500, "extract_confirm": False, "stems_aria": False}
         self.sessions = set()
         self.signins = 0
         self.songs = {}
@@ -68,6 +88,10 @@ class FakeSuno:
         self.buy_clicks = 0
         self.pressed = []  # buttons the program must never press: Move to Trash, Download cover image, Manage
         self.fail_once = set()  # song pages that answer with an error the first time
+        self.stems = {}  # song id -> "extracting" or "ready" (Stems & MIDI made on Suno)
+        self.extract_clicks = []  # songs whose Extract was pressed (it may use credits)
+        self.stems_downloads = []  # (song id, files, tempo) every time the stems' Download was pressed
+        self.stems_opened = []  # songs whose Stems & MIDI → Manage was opened
         self.list_pages = []  # the pages of the workspace's list that were asked for
         self.lock = threading.Lock()
         self.stray = self.add_song("Bài đang phát", in_workspace=False)
@@ -150,6 +174,14 @@ class FakeSuno:
                         return self._send(404, "not found")
                     return self._send(200, f"<!doctype html><title>Suno</title><p>Opening...</p><script>setTimeout("
                                            f"() => location.replace('/song/{target}'), 400)</script>")
+                if len(parts) == 3 and parts[:2] == ["api", "stems"]:
+                    return self._send(200, json.dumps({"state": fake.stems.get(parts[2], "none")}), "application/json")
+                if len(parts) == 2 and parts[0] == "stemszip" and parts[1].endswith(".zip"):
+                    sid = parts[1][:-4]
+                    files = [f for f in q.get("files", [""])[0].split(",") if f in ("wav", "mp3", "midi")]
+                    if fake.stems.get(sid) != "ready" or not files:
+                        return self._send(404, "not found")
+                    return self._send(200, stems_zip(sid, files), "application/zip")
                 if len(parts) == 2 and parts[0] in ("files", "cdn"):
                     sid, _, fmt = parts[1].rpartition(".")
                     if sid not in fake.songs or fmt not in ("wav", "mp3"):
@@ -180,7 +212,10 @@ class FakeSuno:
                     cfg = json.dumps({"id": parts[1], "title": song["title"], "delivery": fake.config["delivery"],
                                       "confirm": fake.config["confirm"], "prepare_ms": fake.config["prepare_ms"],
                                       "ui": fake.config["download_ui"], "aria": fake.config["box_aria"],
-                                      "left": fake.config["downloads_left"], "unlocked": parts[1] in fake.counted})
+                                      "left": fake.config["downloads_left"], "unlocked": parts[1] in fake.counted,
+                                      "stems": fake.stems.get(parts[1], "none"),
+                                      "extract_confirm": fake.config["extract_confirm"],
+                                      "stems_aria": fake.config["stems_aria"]})
                     similar = "".join(
                         f'<div class="row"><a href="/song/{s}">{html.escape(fake.songs[s]["title"])}</a>'
                         f'<button aria-label="More options">...</button></div>' for s in fake.similar)
@@ -218,6 +253,28 @@ class FakeSuno:
                 if u.path == "/api/pressed":
                     fake.pressed.append(q.get("what", [""])[0])
                     return self._send(200, "{}", "application/json")
+                if u.path == "/api/stems-open":
+                    fake.stems_opened.append(q.get("id", [""])[0])
+                    return self._send(200, "{}", "application/json")
+                if len(parts) == 4 and parts[:2] == ["api", "stems"] and parts[2] in fake.songs:
+                    sid, what = parts[2], parts[3]
+                    if what == "extract":
+                        if fake.config["credits"] == 0:
+                            return self._send(200, json.dumps({"credits": False}), "application/json")
+                        fake.extract_clicks.append(sid)
+                        fake.stems[sid] = "extracting"
+
+                        def done(sid=sid):
+                            time.sleep(fake.config["extract_ms"] / 1000)
+                            fake.stems[sid] = "ready"
+
+                        threading.Thread(target=done, daemon=True).start()
+                        return self._send(200, json.dumps({"ok": True}), "application/json")
+                    if what == "download":
+                        if fake.stems.get(sid) != "ready":
+                            return self._send(409, "{}", "application/json")
+                        fake.stems_downloads.append((sid, q.get("files", [""])[0], q.get("tempo", [""])[0]))
+                        return self._send(200, json.dumps({"ok": True}), "application/json")
                 if len(parts) == 3 and parts[:2] == ["api", "download"] and parts[2] in fake.songs:
                     sid, fmt = parts[2], q.get("fmt", [""])[0]
                     with fake.lock:
@@ -348,6 +405,9 @@ SONG_BODY = """
   <div role="menuitem" data-fmt="video">Video</div>
 </div>
 <div role="dialog" id="dlg" hidden></div>
+<div role="dialog" id="stemsdlg" hidden style="top: 60px; left: 120px; width: 560px"></div>
+<div role="dialog" id="filesdlg" hidden style="top: 120px; left: 240px"></div>
+<div role="alertdialog" id="askdlg" hidden style="top: 200px; left: 300px; width: 320px"></div>
 __LYRICS__
 <aside id="similar" style="position: absolute; top: 10px; left: 760px; width: 300px; height: 360px; overflow-y: auto;
   border: 1px solid #999"><b>Similar</b>__SIMILAR__</aside>
@@ -383,7 +443,7 @@ function openBox() {  // suno.com, October 2026: the download box
     return b;
   });
   const manage = el('button'); manage.innerHTML = ICON + '<span>Manage</span>';  // (its own icon)
-  manage.onclick = () => fetch('/api/pressed?what=manage', {method: 'POST'});
+  manage.onclick = openStems;
   const stems = el('div'); stems.append(el('span', 'Stems & MIDI'), manage);
   function paint() {  // the check mark on a chosen row is all that tells (no aria- attribute, as on suno.com)
     for (const b of rows) {
@@ -423,8 +483,116 @@ function limitBox() {
   $('#buy').addEventListener('click', () => fetch('/api/buy', {method: 'POST'}));
 }
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') { menu.hidden = sub.hidden = true; dlg.hidden = true; }
+  if (e.key === 'Escape') {
+    menu.hidden = sub.hidden = true; dlg.hidden = true;
+    for (const d of ['#stemsdlg', '#filesdlg', '#askdlg']) $(d).hidden = true;
+  }
 });
+// Stems & MIDI (the owner's screenshots, October 2026): Manage → "Extract Stems and MIDI" (Auto split, Extract, the
+// stems made so far, each with its own Download icon that must not be pressed, and a Download ▾ button) → "Download":
+// MP3, WAV, MIDI ticked (a check mark only, unless cfg.stems_aria), Tempo behavior, Cancel / Download → one zip.
+const CARET = '<svg width="10" height="10" aria-hidden="true"><path d="M1 3l4 4 4-4"/></svg>';
+function openStems() {
+  fetch('/api/stems-open?id=' + cfg.id, {method: 'POST'});
+  const box = $('#stemsdlg');
+  let state = cfg.stems;
+  const close = el('button'); close.setAttribute('aria-label', 'Close'); close.innerHTML = ICON;
+  close.onclick = () => { box.hidden = true; };
+  const tabs = ['Auto split', 'Split from mix', 'Advanced split'].map((t, i) => {
+    const b = el('button', t); if (i === 2) b.append(el('span', ' New')); return b;
+  });
+  const extract = el('button', 'Extract');
+  const list = el('div');
+  const dl = el('button'); dl.innerHTML = '<span>Download</span>' + CARET;
+  function render() {
+    list.replaceChildren();
+    if (state === 'ready') {
+      for (const n of ['Drums', 'Bass', 'Guitar', 'Piano', 'Vocals', 'Other']) {
+        const one = el('button'); one.setAttribute('aria-label', 'Download'); one.innerHTML = ICON;
+        one.onclick = () => fetch('/api/pressed?what=one-stem', {method: 'POST'});
+        const row = el('div'); row.append(el('span', n), one); list.append(row);
+      }
+    } else if (state === 'extracting') list.append(el('p', 'Extracting stems...'));
+    dl.hidden = state !== 'ready';
+  }
+  function poll() {
+    setTimeout(() => fetch('/api/stems/' + cfg.id).then(r => r.json()).then(j => {
+      state = j.state; render(); if (state === 'extracting') poll();
+    }), 300);
+  }
+  function start() {
+    fetch(`/api/stems/${cfg.id}/extract`, {method: 'POST'}).then(r => r.json()).then(j => {
+      if (j.credits === false) {
+        const ask = $('#askdlg'), up = el('button', 'Upgrade'), no = el('button', 'Close');
+        up.onclick = () => fetch('/api/pressed?what=upgrade', {method: 'POST'});
+        no.onclick = () => { ask.hidden = true; };
+        ask.replaceChildren(el('h2', 'Not enough credits'), el('p', 'Get more credits to extract stems.'), up, no);
+        ask.hidden = false;
+        return;
+      }
+      state = 'extracting'; render(); poll();
+    });
+  }
+  extract.onclick = () => {
+    if (!cfg.extract_confirm) return start();
+    const ask = $('#askdlg'), yes = el('button', 'Extract'), no = el('button', 'Cancel');
+    yes.onclick = () => { ask.hidden = true; start(); };
+    no.onclick = () => { ask.hidden = true; };
+    ask.replaceChildren(el('h2', 'Extract stems?'), el('p', 'This uses 10 credits.'), no, yes);
+    ask.hidden = false;
+  };
+  dl.onclick = openFiles;
+  box.replaceChildren(close, el('h2', 'Extract Stems and MIDI'), el('b', cfg.title), ...tabs,
+                      el('p', 'Auto extract from a list of 12 instruments.'), extract, list, dl);
+  render();
+  box.hidden = false;
+}
+function openFiles() {
+  const box = $('#filesdlg');
+  const ticked = new Set(['mp3', 'wav', 'midi']);
+  let tempo = 'follow';
+  const files = [['mp3', 'MP3'], ['wav', 'WAV'], ['midi', 'MIDI']].map(([f, label]) => {
+    const mark = el('span'); mark.className = 'tick';
+    const row = el('div'); row.append(mark, el('span', label));
+    if (f === 'midi') row.append(el('span', ' May take longer to process'));
+    row.onclick = () => { if (!ticked.delete(f)) ticked.add(f); paint(); };
+    row.dataset.f = f;
+    return row;
+  });
+  const tempos = [['fixed', 'Fixed tempo', 'Uses one steady average BPM'], ['follow', 'Follow tempo changes',
+    'Keeps every tempo shift']].map(([t, name, what]) => {
+    const row = el('div'); row.append(el('b', name), el('span', ' ' + what)); row.dataset.t = t;
+    row.onclick = () => { tempo = t; paint(); };
+    return row;
+  });
+  function paint() {
+    for (const row of files) {
+      const mark = row.firstChild, on = ticked.has(row.dataset.f);
+      mark.innerHTML = on ? ICON : '';
+      if (cfg.stems_aria) { mark.setAttribute('role', 'checkbox'); mark.setAttribute('aria-checked', String(on)); }
+    }
+    for (const row of tempos) {
+      const old = row.querySelector('svg'); if (old) old.remove();
+      if (row.dataset.t === tempo) row.insertAdjacentHTML('beforeend', ICON);
+    }
+  }
+  const cancel = el('button', 'Cancel'), go = el('button', 'Download');
+  cancel.onclick = () => { box.hidden = true; };
+  go.onclick = () => {
+    const chosen = ['wav', 'mp3', 'midi'].filter(f => ticked.has(f));
+    if (!chosen.length) return;
+    fetch(`/api/stems/${cfg.id}/download?files=${chosen}&tempo=${tempo}`, {method: 'POST'})
+      .then(() => fetch(`/stemszip/${cfg.id}.zip?files=${chosen}`)).then(r => r.blob()).then(b => {
+        const a = document.createElement('a'); a.href = URL.createObjectURL(b);
+        a.download = cfg.title + ' - Auto split.zip'; document.body.append(a); a.click();
+      });
+    box.hidden = true;
+  };
+  box.replaceChildren(el('h2', 'Download'), el('p', 'Auto split · 6 stems'), el('p', 'Select files to download'),
+                      ...files, el('p', 'Tempo behavior'), ...tempos, cancel, go);
+  paint();
+  box.hidden = false;
+}
 function box(inner) { dlg.innerHTML = inner; dlg.hidden = false; }
 function deliver(fmt) {
   const url = `/files/${cfg.id}.${fmt}`;

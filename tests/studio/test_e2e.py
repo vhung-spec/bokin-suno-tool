@@ -325,3 +325,52 @@ def test_activation_screen(request, tmp_path):
     finally:
         app.state.suno.shutdown()
         server.should_exit = True
+
+
+def test_stems_button(studio):
+    """A song downloaded before: its Stems button (the song's stems not made yet: Extract pressed on Suno, after the
+    box asking first), the stems unpacked next to it, then its Mở stems button; the stems checkbox kept."""
+    import csv
+
+    from patchright.sync_api import sync_playwright
+
+    fake, music, sid = studio["fake"], studio["music"], studio["ids"][2]
+    fake.config["extract_confirm"] = True
+    music.mkdir(parents=True)
+    (music / "Phố cũ.wav").write_bytes(b"RIFF" + bytes(4000))
+    with open(music / "danh-sach.csv", "w", encoding="utf-8-sig", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["ten_bai", "file", "trang_thai", "ghi_chu", "dinh_dang", "link", "luc", "id"])
+        w.writerow(["Phố cũ", "Phố cũ.wav", "xong", "", "wav", f"{fake.url}/song/{sid}", "2026-10-30 10:00:00", sid])
+    errors = []
+    with sync_playwright() as pw:
+        browser, page = browser_page(pw, errors)
+        page.goto(studio["url"])
+        page.locator("#view-accounts").wait_for(state="visible")
+        page.fill("#newAccount", "suno1")
+        page.click("#login")
+        page.wait_for_function("() => [...document.querySelectorAll('#accounts td')].some(t => t.textContent === "
+                               "'suno1')", timeout=120_000)
+        page.click("nav button[data-view=download]")
+        page.fill("#folder", str(music))
+        page.dispatch_event("#folder", "change")
+        page.check("#stems")
+        page.dispatch_event("#folder", "change")  # (saves the settings)
+        page.wait_for_function("() => document.querySelectorAll('#library tbody tr').length === 1")
+        row = page.locator("#library tbody tr", has_text="Phố cũ")
+        assert "state-done" in run_task(page, row.get_by_role("button", name="Stems", exact=True))
+        log = page.locator("#taskLog").inner_text()
+        assert "stems xong" in log and "Phố cũ - stems" in log, log
+        assert fake.extract_clicks == [sid] and fake.stems_downloads[-1] == (sid, "wav,mp3,midi", "follow")
+        stems = music / "Phố cũ - stems"
+        assert (stems / "WAV" / "Drums.wav").is_file() and (stems / "MIDI" / "Drums.mid").is_file()
+        page.wait_for_function("() => [...document.querySelectorAll('#library tbody button')].some(b => "
+                               "b.textContent === 'Mở stems')", timeout=30_000)
+        page.locator("#library tbody tr", has_text="Phố cũ").get_by_role("button", name="Mở stems").click()
+        time.sleep(0.5)
+        assert stems in studio["opened"]
+        page.reload()
+        page.click("nav button[data-view=download]")
+        assert page.locator("#stems").is_checked(), "the stems checkbox kept"
+        assert fake.pressed == [] and not errors, (fake.pressed, errors)
+        browser.close()

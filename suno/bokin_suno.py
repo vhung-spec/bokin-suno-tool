@@ -9,11 +9,16 @@ plan's download allowance exactly as by hand; the run stops when Suno says it is
   accounts                     the accounts on this computer
   remove <tai-khoan>           forget an account and its Chrome profile
   list <tai-khoan> <link>...   the songs at workspace (or playlist, or song) links, without downloading
-  download <tai-khoan> <link>... [--out FOLDER] [--format wav|mp3] [--limit N] [--full]
+  download <tai-khoan> <link>... [--out FOLDER] [--format wav|mp3] [--limit N] [--full] [--stems]
                                every song at the links not yet in FOLDER/danh-sach.csv, and the ones that failed
                                before; a second run reads a workspace's list only until it meets songs already
                                downloaded (--full: the whole list). The lyrics a song's page shows are kept next to
-                               its file (Title.txt)
+                               its file (Title.txt). --stems: each downloaded song's Stems & MIDI too
+  stems <tai-khoan> <link>... [--out FOLDER] [--files wav,mp3,midi] [--tempo follow|fixed] [--no-extract] [--limit N]
+                               the Stems & MIDI of the songs at the links into FOLDER/"Title - stems" (from Suno's zip):
+                               Download → Stems & MIDI → Manage → Auto split; a song whose stems are not made yet gets
+                               Extract pressed (it may use Suno credits; --no-extract: skipped), then Download with
+                               the files and tempo asked for. A song done before is not done again
   selftest                     checks that need no browser
 
 Data (accounts.json, a Chrome profile per account, logs) is in ./data next to the program, or in --data /
@@ -32,6 +37,7 @@ import shutil
 import sys
 import tempfile
 import time
+import zipfile
 from datetime import datetime
 from pathlib import Path
 
@@ -387,6 +393,101 @@ def download_one(page, catcher, song, fmt, out, label):
             part.unlink()
 
 
+def stems_one(page, catcher, song, out, args):
+    """One song's Stems & MIDI into its "Title - stems" folder (a zip from Suno unpacked). Returns (folder, files)."""
+    part = out.root / f".{song.id}.stems.part"
+    shutil.rmtree(part, ignore_errors=True)
+    part.mkdir(parents=True)
+    try:
+        title, got = web.download_stems(page, catcher, song, part, log, files=args.stem_files, tempo=args.tempo,
+                                        extract=not args.no_extract)
+        dest = out.stems_dir(song, title)
+        kept = []
+        for path in got:
+            if zipfile.is_zipfile(path):
+                kept += folder.unpack(path, dest)
+            else:
+                dest.mkdir(parents=True, exist_ok=True)
+                target = dest / folder.safe_filename(path.name.split("-", 1)[-1], "stem")
+                path.replace(target)
+                kept.append(target)
+        if not kept:
+            raise web.SunoError("stuck", "File stems nhận được không có gì bên trong")
+        out.add_stems(song, dest, title)
+        return dest, kept
+    finally:
+        shutil.rmtree(part, ignore_errors=True)
+
+
+def run_stems(page, catcher, songs, out, args, data, name):
+    """The Stems & MIDI of these songs, each not done before. Returns (done, failed, stopped reason or "")."""
+    todo = [s for s in songs if not out.done(s.id, folder.STEMS) and not out.not_mine(s.id)]
+    if getattr(args, "limit", None) is not None:
+        todo = todo[:args.limit]
+    log.info("Stems & MIDI (%s, tempo %s): %d bài cần tải%s", ", ".join(f.upper() for f in args.stem_files),
+             "theo bài" if args.tempo == "follow" else "cố định", len(todo),
+             "" if args.no_extract else " (bài chưa tách stems: bấm Extract trên Suno, có thể tốn credit)")
+    done = failed = stuck = 0
+    stopped = ""
+    for n, song in enumerate(todo, 1):
+        if stop_asked():
+            stopped = "Đã dừng theo yêu cầu. Chạy lại để tải tiếp các bài còn thiếu"
+            break
+        label = f"[{n}/{len(todo)}] {song.title or song.id}"
+        try:
+            dest, kept = stems_one(page, catcher, song, out, args)
+        except Exception as e:
+            log.debug("stems failed", exc_info=True)
+            note = describe(e)
+            code = getattr(e, "code", "")
+            if code == "not_mine":
+                log.warning("%s: %s", label, note)
+                with contextlib.suppress(folder.FolderError):
+                    out.add_not_mine(song, folder.STEMS, note)
+                continue
+            log.error("%s: stems: %s", label, note)
+            failed += 1
+            stopped = stop_reason(e, page)
+            if stopped:
+                break
+            with contextlib.suppress(folder.FolderError):
+                out.add_failure(song, folder.STEMS, note)  # tried again on the next run
+            if code not in ("no_stems", "not_ready"):
+                keep_failure(data, page, name)
+                stuck += 1
+                if stuck >= STUCK_IN_A_ROW:
+                    stopped = (f"{STUCK_IN_A_ROW} bài liền nhau không tải được stems: có thể Suno đã đổi giao diện. "
+                               f"Gửi các file loi-*.png và loi-*.html trong {data.logs} cho người sửa tool")
+                    break
+            continue
+        stuck = 0
+        done += 1
+        log.info("%s: stems xong → %s (%d file)", label, dest.name, len(kept))
+        page.wait_for_timeout(PACE_SECONDS * 1000)
+    return done, failed, stopped
+
+
+def cmd_stems(args, data):
+    name = args.tai_khoan
+    account = known_account(data, name)
+    links = read_links(args.links)
+    try:
+        out = folder.Folder(args.out or ROOT / "nhac-suno")
+    except folder.FolderError as e:
+        raise UserError(str(e))
+    started = time.monotonic()
+    with single_run(data), browser(args, data, name, args.headless) as context:
+        page = first_page(context)
+        songs, bad = gather_songs(data, page, name, account, links)
+        again = [web.Song(sid, title) for sid, title in out.failed(folder.STEMS) if sid not in {s.id for s in songs}]
+        done, failed, stopped = run_stems(page, web.Catcher(context), songs + again, out, args, data, name)
+    if stopped:
+        log.error("Đã dừng: %s", stopped)
+    log.info("Tổng: stems của %d bài tải xong, %d bài lỗi (trong %s). Thư mục: %s", done, failed,
+             human_time(time.monotonic() - started), out.root)
+    return 1 if failed or stopped or bad else 0
+
+
 def stop_asked():
     """Bokin Suno Studio's Stop button: BOKIN_SUNO_STOP names a file that appears when it is pressed."""
     flag = os.environ.get("BOKIN_SUNO_STOP")
@@ -466,6 +567,11 @@ def cmd_download(args, data):
                 eta = f" (còn {left} bài, khoảng {human_time((time.monotonic() - loop_started) / n * left)})"
             log.info("%s: xong → %s%s", label, path.name, eta)
             page.wait_for_timeout(PACE_SECONDS * 1000)
+        if args.stems and not stopped:  # the Stems & MIDI of the songs of these links that are downloaded
+            listed = [s for s in songs + again if out.done(s.id, fmt)]
+            s_done, s_failed, stopped = run_stems(page, catcher, listed, out, args, data, name)
+            log.info("Stems & MIDI: %d bài xong, %d bài lỗi", s_done, s_failed)
+            failed += s_failed
     if stopped:
         log.error("Đã dừng: %s", stopped)
     log.info("Tổng: %d bài tải xong, %d bài lỗi%s (%s trong %s). Danh sách: %s", done, failed,
@@ -582,6 +688,43 @@ def cmd_selftest(args, data):
         check("'-Suno" in again.list_path.read_text(encoding="utf-8-sig"), "failure note formula guard")
         again.add(other, again.target(other.title, other.id, "wav"), "wav", other.title)
         check(again.done(other.id, "wav") and not again.failed("wav"), "a failed song done at last")
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        z = tmp / "s.zip"
+        with zipfile.ZipFile(z, "w") as w:
+            w.writestr("WAV/Drums.wav", "x")
+            w.writestr("../evil.txt", "x")
+            w.writestr("..\\..\\evil2.txt", "x")
+            w.writestr("/abs/evil3.txt", "x")
+            w.writestr("C:/Windows/evil4.txt", "x")
+            w.writestr("MIDI/CON.mid", "x")
+        got = folder.unpack(z, tmp / "out")
+        inside = all((tmp / "out").resolve() in p.resolve().parents for p in got)
+        check(inside and not (tmp / "evil.txt").exists() and (tmp / "out" / "WAV" / "Drums.wav").is_file()
+              and (tmp / "out" / "MIDI" / "_CON.mid").is_file(), f"stems zip unpacked inside its folder {got}")
+        try:
+            folder.unpack(z, tmp / "big", limit=3)
+            check(False, "a zip over the size limit refused")
+        except folder.FolderError:
+            pass
+        out = folder.Folder(tmp / "nhac")
+        song = web.Song(sid, "Mưa đêm")
+        p = out.target(song.title, sid, "wav")
+        p.write_bytes(b"x")
+        out.add(song, p, "wav", song.title)
+        check(out.stems_dir(song, "khác").name == "Mưa đêm - stems", "stems folder named after the song's file")
+        (tmp / "nhac" / "Mưa đêm - stems").mkdir()
+        check(out.stems_dir(song, "x").name == "Mưa đêm - stems (2)", "not a folder that is not the song's own")
+        out.add_stems(song, tmp / "nhac" / "Mưa đêm - stems (2)", song.title)
+        check(folder.Folder(tmp / "nhac").done(sid, folder.STEMS)
+              and folder.Folder(tmp / "nhac").stems_dir(song, "x").name == "Mưa đêm - stems (2)", "stems listed")
+    check(stem_files("wav, MIDI") == ("wav", "midi"), "stem files")
+    for bad in ("", "flac", "wav,,zip"):
+        try:
+            stem_files(bad)
+            check(False, f"stem files refused: {bad!r}")
+        except argparse.ArgumentTypeError:
+            pass
     check(human_time(20) == "chưa tới 1 phút" and human_time(180) == "3 phút" and human_time(3720) == "1 giờ 2 phút",
           "times")
     check(human_size(1_500_000) == "1.5 MB" and human_size(2_300_000_000) == "2.3 GB", "sizes")
@@ -595,6 +738,24 @@ def cmd_selftest(args, data):
         print("FAIL", e)
     print("selftest", "OK" if not errors else f"{len(errors)} FAILED")
     return 1 if errors else 0
+
+
+def stem_files(text):
+    files = tuple(f for f in (p.strip().lower() for p in text.split(",")) if f)
+    if not files or any(f not in web.STEM_FILES for f in files):
+        raise argparse.ArgumentTypeError("chỉ gồm wav, mp3, midi, cách nhau bằng dấu phẩy")
+    return files
+
+
+def stems_options(s, flag=None):
+    """The Stems & MIDI options; with `flag` (download), they apply once that flag is given."""
+    if flag:
+        s.add_argument(flag, action="store_true", help="tải cả Stems & MIDI của mỗi bài đã tải")
+    s.add_argument("--files", dest="stem_files", type=stem_files, default=web.STEM_FILES,
+                   help="loại file stems: wav,mp3,midi (mặc định cả ba)")
+    s.add_argument("--tempo", choices=("follow", "fixed"), default="follow",
+                   help="tempo của MIDI: follow (theo bài, mặc định) hoặc fixed (cố định)")
+    s.add_argument("--no-extract", action="store_true", help="bài chưa tách stems thì bỏ qua, không bấm Extract")
 
 
 def main(argv=None):
@@ -622,8 +783,15 @@ def main(argv=None):
     s.add_argument("--out", help="thư mục lưu nhạc (mặc định ./nhac-suno)")
     s.add_argument("--format", choices=("wav", "mp3"), default="wav", help="wav (mặc định) hoặc mp3")
     s.add_argument("--limit", type=int, help="lần này chỉ tải tối đa chừng này bài")
+    stems_options(s, "--stems")
     s.add_argument("--full", action="store_true", help="đọc hết danh sách workspace (mặc định dừng khi gặp "
                    f"{KNOWN_IN_A_ROW} bài liền đã tải)")
+    s = sub.add_parser("stems", help="tải Stems & MIDI của các bài ở link (bấm Extract nếu chưa tách)")
+    s.add_argument("tai_khoan")
+    s.add_argument("links", nargs="+", metavar="link", help="một hoặc nhiều link bài / workspace / playlist")
+    s.add_argument("--out", help="thư mục nhạc (stems vào thư mục con 'Tên bài - stems')")
+    s.add_argument("--limit", type=int, help="lần này chỉ tải stems của tối đa chừng này bài")
+    stems_options(s)
     sub.add_parser("selftest", help="tự kiểm tra")
     args = p.parse_args(argv)
     if getattr(args, "limit", None) is not None and args.limit < 1:
@@ -632,6 +800,7 @@ def main(argv=None):
     data = Data(args.data or os.environ.get("BOKIN_SUNO_DATA") or ROOT / "data")
     setup_logging(data)
     commands = {"login": cmd_login, "check": cmd_check, "accounts": cmd_accounts, "remove": cmd_remove,
+                "stems": cmd_stems,
                 "list": cmd_list, "download": cmd_download, "selftest": cmd_selftest}
     try:
         return commands[args.cmd](args, data)

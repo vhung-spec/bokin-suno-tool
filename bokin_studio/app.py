@@ -366,6 +366,8 @@ def create_app(token: str, port: int = paths.PORTS[0], extra_hosts: tuple = (), 
         for key, kind in (("account", str), ("links", str), ("folder", str), ("format", str), ("preset", str)):
             if isinstance(body.get(key), kind) and len(body[key]) <= 20_000:
                 keep[key] = body[key]
+        if isinstance(body.get("stems"), bool):
+            keep["stems"] = body["stems"]
         write_settings({**read_settings(), **keep})
         return read_settings()
 
@@ -436,7 +438,22 @@ def create_app(token: str, port: int = paths.PORTS[0], extra_hosts: tuple = (), 
             args += ["--limit", str(limit)]
         if body.get("full"):
             args.append("--full")
-        return run("download", args, f"Tải nhạc ({fmt.upper()})", body)
+        label = f"Tải nhạc ({fmt.upper()})"
+        if body.get("stems"):  # WAV, MP3 and MIDI, Follow tempo changes; Extract when not made yet (the owner's choice)
+            args.append("--stems")
+            label = f"Tải nhạc ({fmt.upper()}) và Stems & MIDI"
+        return run("download", args, label, body)
+
+    @app.post("/api/suno/stems")
+    def suno_stems(body: dict):
+        """The Stems & MIDI of one downloaded song (the song table's Stems button)."""
+        name = _account(body.get("account"))
+        folder = _folder(body.get("folder"))
+        row = library_call(library.song_row, folder, body.get("file"))
+        link = row.get("link", "")
+        if not link.startswith(("https://", "http://")) or len(link) > 2000:
+            raise HTTPException(400, "Bài này không có link Suno trong danh-sach.csv")
+        return run("stems", [name, link, "--out", str(folder)], f"Tải Stems & MIDI: {row['title']}", body)
 
     @app.post("/api/suno/stop")
     def suno_stop():
@@ -463,6 +480,13 @@ def create_app(token: str, port: int = paths.PORTS[0], extra_hosts: tuple = (), 
     def library_audio(folder: str, file: str):
         path = library_call(library.song_file, _folder(folder), file)
         return FileResponse(path, media_type="audio/wav" if path.suffix.lower() == ".wav" else "audio/mpeg")
+
+    @app.post("/api/library/open-stems")
+    def library_open_stems(body: dict):
+        if not desktop:
+            raise HTTPException(400, "Chỉ mở được thư mục ở app cài trên máy.")
+        open_in_explorer(library_call(library.stems_folder, _folder(body.get("folder")), body.get("file")))
+        return {"ok": True}
 
     @app.post("/api/library/master")
     def library_master(body: dict):

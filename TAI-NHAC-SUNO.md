@@ -127,6 +127,20 @@ suno download suno1 "https://suno.com/create?wid=..." --out "D:\Nhac\Suno"
 - Trước khi tải, tool xem ổ đĩa còn đủ chỗ không (mỗi bài WAV khoảng 60 MB). Ổ đầy giữa chừng thì tool dừng và báo.
 - Nhạc tải về dùng thẳng trong **Bokin Studio Music** (thêm cả thư mục vào danh sách nhạc).
 
+### Stems & MIDI (tuỳ chọn)
+
+```
+suno stems suno1 "https://suno.com/song/..." --out "D:\Nhac\Suno"
+suno download suno1 "https://suno.com/create?wid=..." --out "D:\Nhac\Suno" --stems
+```
+
+- `stems`: tải Stems & MIDI của các bài ở link (link một bài, workspace hoặc playlist) vào thư mục con
+  **"Tên bài - stems"** (`WAV`, `MP3`, `MIDI`). `download ... --stems`: tải bài xong thì tải tiếp stems của chúng.
+- Bài chưa tách stems trên Suno: tool bấm **Extract** (Auto split), **có thể tốn credit Suno**. Thêm `--no-extract`
+  để bỏ qua các bài đó. Hết credit thì tool dừng, không mua thêm.
+- `--files wav,mp3,midi` (mặc định cả ba), `--tempo follow|fixed` (tempo của MIDI, mặc định `follow`).
+- Trong `danh-sach.csv`, stems của một bài là một dòng `dinh_dang` = `stems`. Bài đã tải stems thì không tải lại.
+
 ### File danh-sach.csv
 
 Trong thư mục nhạc có file **`danh-sach.csv`** (mở bằng Excel): mỗi bài một dòng, gồm tên bài, tên file, trạng thái

@@ -66,7 +66,8 @@ SEL = {
     # never downloaded, it would use up one of the plan's downloads for nothing
     "text_follow": re.compile(r"^(follow|following|unfollow)$", re.I),
     # Stems & MIDI (download_stems)
-    "text_stems_row": re.compile(r"\bstems\s*(&|and)\s*midi\b", re.I),
+    # (the box's words may run together: "Stems & MIDIManage")
+    "text_stems_row": re.compile(r"stems\s*(&|and)\s*midi", re.I),
     "text_manage": re.compile(r"^manage$", re.I),
     "text_stems_box": re.compile(r"extract\s+stems", re.I),  # the "Extract Stems and MIDI" box
     "text_auto_split": re.compile(r"^auto\s*split$", re.I),
@@ -724,7 +725,8 @@ STEM_FILES = ("wav", "mp3", "midi")
 STEMS_WAIT = 20 * 60  # seconds: extracting the stems, then making the files (MIDI takes longer)
 
 # Whether a row of the stems' Download box is ticked: true, false, or null when the page does not say. The row's own
-# box only: climbing from the label stops before an element that holds another row too.
+# box only: climbing from the label stops before an element that holds another row too. Without an aria-checked
+# (suno.com marks its choices with a check mark, an svg, and nothing else), the row's check mark tells.
 JS_TICKED = r"""(el) => {
   const names = /^(mp3|wav|midi)\b/i;
   const sel = '[role="checkbox"], [aria-checked], input[type="checkbox"], [data-state="checked"], [data-state="unchecked"]';
@@ -739,6 +741,11 @@ JS_TICKED = r"""(el) => {
       const v = b.getAttribute(a);
       if (v != null) return ['true', 'checked', 'on'].includes(v.toLowerCase());
     }
+  }
+  for (let r = el, i = 0; r && i < 5; r = r.parentElement, i++) {
+    if (i > 0 && rows(r) > 1) break;
+    if (r.querySelector('svg')) return true;
+    if (i > 0 && r.querySelector('[class*="check" i], [class*="tick" i]')) return false;
   }
   return null;
 }"""

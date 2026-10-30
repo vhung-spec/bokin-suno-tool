@@ -176,6 +176,11 @@ def make_folder(folder: Path):
         w.writerow(["'=Không lời", "Không lời.wav", "xong", "", "wav", "", "2026-10-30 11:00:00", "b"])
         w.writerow(["Lỗi", "", "loi", "Suno chưa cho tải", "wav", "", "2026-10-30 12:00:00", "c"])
         w.writerow(["Thoát", "../../thoat.wav", "xong", "", "wav", "", "2026-10-30 12:00:00", "d"])
+        w.writerow(["Mưa đêm", "Mưa đêm - stems", "xong", "", "stems", "https://suno.com/song/a", "2026-10-30 10:05:00",
+                    "a"])
+        w.writerow(["Ngoài", "..", "xong", "", "stems", "", "2026-10-30 10:05:00", "b"])
+    (folder / "Mưa đêm - stems" / "WAV").mkdir(parents=True)
+    (folder / "Mưa đêm - stems" / "WAV" / "Drums.wav").write_bytes(b"RIFF")
 
 
 def test_library_and_lyrics(client, tmp_path):
@@ -293,3 +298,50 @@ def test_open_folder(client, tmp_path, monkeypatch):
 
 def test_an_odd_token_is_refused(client):
     assert client.get("/api/suno", params={"t": "tökén"}).status_code == 403
+
+
+# ---- Stems & MIDI ----
+
+def test_download_with_stems(client, tmp_path):
+    folder = tmp_path / "Nhac"
+    client.post("/api/suno/download", headers=H, json={"account": "suno1", "links": "https://suno.com/create?wid=1",
+                                                       "folder": str(folder), "stems": True})
+    task = wait_task(client)
+    assert "Stems & MIDI" in task["label"]
+    args = (tmp_path / "suno" / "args.txt").read_text(encoding="utf-8").split("\n")
+    assert args[-1] == "--stems" and args[0] == "download"
+
+
+def test_stems_of_one_song(client, tmp_path):
+    folder = tmp_path / "Nhac"
+    make_folder(folder)
+    songs = client.get("/api/library", headers=H, params={"folder": str(folder)}).json()["songs"]
+    assert {s["title"]: s["stems"] for s in songs} == {"Mưa đêm": "Mưa đêm - stems", "=Không lời": ""}
+    r = client.post("/api/suno/stems", headers=H, json={"account": "suno1", "folder": str(folder),
+                                                       "file": "Mưa đêm.wav"})
+    assert r.status_code == 200, r.text
+    assert wait_task(client)["state"] == "done"
+    args = (tmp_path / "suno" / "args.txt").read_text(encoding="utf-8").split("\n")
+    assert args == ["stems", "suno1", "https://suno.com/song/a", "--out", str(folder)]
+    no_link = client.post("/api/suno/stems", headers=H, json={"account": "suno1", "folder": str(folder),
+                                                             "file": "Không lời.wav"})
+    assert no_link.status_code == 400  # (no Suno link in its row)
+    for name in ("Secret.wav", "../../thoat.wav"):
+        assert client.post("/api/suno/stems", headers=H, json={"account": "suno1", "folder": str(folder),
+                                                              "file": name}).status_code == 400
+
+
+def test_open_stems(client, tmp_path, monkeypatch):
+    from bokin_studio import app as studio_app
+
+    opened = []
+    monkeypatch.setattr(studio_app, "open_in_explorer", opened.append)
+    desktop = TestClient(studio_app.create_app(TOKEN, port=8776, desktop=True, suno_data=tmp_path / "s",
+                                               master_out=tmp_path / "m"), base_url="http://127.0.0.1:8776")
+    folder = tmp_path / "Nhac"
+    make_folder(folder)
+    assert desktop.post("/api/library/open-stems", headers=H, json={"folder": str(folder),
+                                                                   "file": "Mưa đêm.wav"}).status_code == 200
+    assert opened == [folder / "Mưa đêm - stems"]
+    assert desktop.post("/api/library/open-stems", headers=H, json={"folder": str(folder),
+                                                                   "file": "Không lời.wav"}).status_code == 400

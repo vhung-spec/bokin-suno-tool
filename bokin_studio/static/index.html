@@ -163,6 +163,10 @@ iframe { flex: 1; width: 100%; border: 0; background: var(--bg); }
       <button class="secondary small" id="pickFolder" hidden>Chọn…</button>
       <button class="secondary small" id="openFolder" hidden>Mở thư mục</button></span></label>
     <label class="check"><input type="checkbox" id="full"> Đọc hết danh sách (khi chuyển bài cũ vào workspace)</label>
+    <label class="check" style="margin-top:6px"><input type="checkbox" id="stems"> Tải cả <b>Stems &amp; MIDI</b>
+      (WAV, MP3, MIDI) của mỗi bài</label>
+    <p class="hint" style="margin:2px 0 0 22px">Bài chưa tách stems trên Suno thì app bấm <b>Extract</b> (Auto split):
+      có thể tốn credit Suno. Hết credit thì app dừng, không mua thêm.</p>
     <div class="row" style="margin-top:12px">
       <button class="secondary" id="listSongs">Xem danh sách bài</button>
       <button class="primary" id="download">Tải về</button>
@@ -411,11 +415,11 @@ async function poll() {
 
 function downloadBody() {
   return { account: $("account").value, links: $("links").value, folder: $("folder").value.trim(),
-    format: $("format").value, limit: $("limit").value || null, full: $("full").checked };
+    format: $("format").value, limit: $("limit").value || null, full: $("full").checked, stems: $("stems").checked };
 }
 async function saveSettings() {
   try { settings = await api("/api/settings", { json: { account: $("account").value, links: $("links").value,
-    folder: $("folder").value.trim(), format: $("format").value, preset: $("preset").value } }); } catch (e) {}
+    folder: $("folder").value.trim(), format: $("format").value, preset: $("preset").value, stems: $("stems").checked } }); } catch (e) {}
 }
 
 // ---- the downloaded songs ----
@@ -432,12 +436,29 @@ async function refreshLibrary() {
     const lyr = button("Lời", "secondary small", () => openLyrics(s, false));
     lyr.disabled = !s.lyrics; lyr.title = s.lyrics ? "" : "Suno không hiện lời cho bài này";
     const resp = button("Đổi lời", "secondary small", () => openLyrics(s, true)); resp.disabled = !s.lyrics;
-    td.append(lyr, resp, button("Master", "primary small", () => sendToMaster(s)));
+    td.append(lyr, resp);
+    if (s.stems) {
+      const open = button("Mở stems", "secondary small", () => api("/api/library/open-stems",
+        { json: { folder: libraryFolder, file: s.file } }).catch((err) => toast(err.message)));
+      open.title = s.stems; open.disabled = !info.desktop; td.append(open);
+    } else {
+      const st = button("Stems", "secondary small", () => {
+        if (!needAccount()) return;
+        runTask("/api/suno/stems", { account: $("account").value, folder: libraryFolder, file: s.file });
+      });
+      st.title = "Tải Stems & MIDI (WAV, MP3, MIDI) của bài này. Chưa tách thì app bấm Extract: có thể tốn credit Suno.";
+      td.append(st);
+    }
+    td.append(button("Master", "primary small", () => sendToMaster(s)));
     tr.append(td); tbody.append(tr);
   }
   $("library").hidden = !songs.length; $("libraryEmpty").hidden = !!songs.length;
 }
 let libraryFolder = "";
+function needAccount() {
+  if ($("account").value) return true;
+  toast("Chưa có tài khoản Suno: thêm ở thẻ 1. Tài khoản Suno."); show("accounts"); return false;
+}
 function songQuery(s) { return q({ folder: libraryFolder, file: s.file }); }
 function play(s) {
   const p = $("player"); p.hidden = false;
@@ -494,6 +515,7 @@ async function init() {
   $("folder").value = settings.folder || info.music_dir;
   $("links").value = settings.links || "";
   if (settings.format) $("format").value = settings.format;
+  $("stems").checked = !!settings.stems;
   $("preset").replaceChildren(...Object.keys(info.presets).map((k) => { const o = el("option", PRESET_TEXT[k] || k); o.value = k; return o; }));
   if (settings.preset && info.presets[settings.preset]) $("preset").value = settings.preset;
   $("pickFolder").hidden = !info.pick_folder; $("openFolder").hidden = !info.desktop; $("openMaster").hidden = !info.desktop;
@@ -515,10 +537,6 @@ async function init() {
     runTask("/api/suno/login", { account: name });
   };
   $("checkAll").onclick = () => runTask("/api/suno/check", {});
-  const needAccount = () => {
-    if ($("account").value) return true;
-    toast("Chưa có tài khoản Suno: thêm ở thẻ 1. Tài khoản Suno."); show("accounts"); return false;
-  };
   $("listSongs").onclick = () => { if (!needAccount()) return; saveSettings(); runTask("/api/suno/list", downloadBody()); };
   $("download").onclick = () => { if (!needAccount()) return; saveSettings(); runTask("/api/suno/download", downloadBody()); };
   $("stop").onclick = stopTask;
