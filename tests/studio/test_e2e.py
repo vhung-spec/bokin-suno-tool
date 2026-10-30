@@ -124,7 +124,8 @@ def account_task_done(page, seconds=120):
 
 
 def clipboard(page):
-    return page.evaluate("() => navigator.clipboard.readText()")
+    """What was copied, with Windows' line breaks (Chrome writes \\r\\n there) as \\n."""
+    return page.evaluate("() => navigator.clipboard.readText()").replace("\r\n", "\n")
 
 
 def test_every_button(studio):
