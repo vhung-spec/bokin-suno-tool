@@ -125,5 +125,5 @@ jobs:
           "Latest before: $latestBefore, after: $latestAfter"
           if ($latestBefore -and $latestAfter -ne $latestBefore) {
             gh release edit $latestBefore --repo $repo --latest
-            throw "Latest moved from $latestBefore to $latestAfter: set back to $latestBefore"
+            throw "Latest moved from ${latestBefore} to ${latestAfter}, set back to ${latestBefore}"
           }
