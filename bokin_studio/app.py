@@ -19,6 +19,7 @@ import os
 import re
 import secrets
 import subprocess
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -106,20 +107,58 @@ def open_in_explorer(path: Path) -> None:
         subprocess.Popen(["xdg-open", str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
+# Windows' folder dialog, from a PowerShell of its own. Windows keeps a program in the background from putting its
+# window in front, so the dialog belongs to a tiny form that stays on top of every window (TopMost, shown off screen):
+# it opens above the app instead of behind it. The chosen folder comes back in a UTF-8 file (a folder name may have
+# Vietnamese letters, which a console without a window would mangle); the texts go in as environment variables.
+PICK_SCRIPT = r"""
+$ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+[System.Windows.Forms.Application]::EnableVisualStyles()
+$o = New-Object System.Windows.Forms.Form
+$o.TopMost = $true; $o.ShowInTaskbar = $false; $o.StartPosition = 'Manual'; $o.FormBorderStyle = 'None'
+$o.Location = New-Object System.Drawing.Point(-32000, -32000); $o.Size = New-Object System.Drawing.Size(1, 1)
+$o.Show(); $o.Activate()
+$d = New-Object System.Windows.Forms.FolderBrowserDialog
+$d.Description = $env:BOKIN_PICK_TEXT
+$d.ShowNewFolderButton = $true
+if ($env:BOKIN_PICK_START) { $d.SelectedPath = $env:BOKIN_PICK_START }
+$r = $d.ShowDialog($o)
+$o.Close()
+if ($r -eq [System.Windows.Forms.DialogResult]::OK) {
+  [IO.File]::WriteAllText($env:BOKIN_PICK_OUT, $d.SelectedPath, (New-Object System.Text.UTF8Encoding $false))
+}
+"""
+
+
+class PickError(Exception):
+    pass
+
+
 def pick_folder(start: str = "") -> str | None:
-    """Windows' own folder dialog (in front of the app's window); "" if cancelled, None where there is none."""
+    """Windows' own folder dialog, on top of the app's window; "" if cancelled, None where there is none. PickError
+    (the reason) if it could not be shown."""
     if os.name != "nt":
         return None
-    script = ("Add-Type -AssemblyName System.Windows.Forms; [Console]::OutputEncoding = [Text.Encoding]::UTF8; "
-              "$o = New-Object System.Windows.Forms.Form -Property @{TopMost = $true; ShowInTaskbar = $false}; "
-              "$d = New-Object System.Windows.Forms.FolderBrowserDialog; "
-              "$d.Description = 'Chon thu muc luu nhac'; $d.ShowNewFolderButton = $true; "
-              "$d.SelectedPath = $env:BOKIN_PICK_START; "
-              "if ($d.ShowDialog($o) -eq 'OK') { $d.SelectedPath }")
-    r = subprocess.run(["powershell.exe", "-NoProfile", "-STA", "-Command", script], capture_output=True,
-                       env=dict(os.environ, BOKIN_PICK_START=start or ""), creationflags=subprocess.CREATE_NO_WINDOW,
-                       timeout=3600)
-    return r.stdout.decode("utf-8", "replace").strip()
+    path = Path(start) if start else None
+    while path is not None and not path.is_dir():  # (a folder not made yet: start from the nearest one there is)
+        path = path.parent if path.parent != path else None
+    with tempfile.TemporaryDirectory(prefix="bokin-pick-") as tmp:
+        out = Path(tmp) / "folder.txt"
+        env = dict(os.environ, BOKIN_PICK_START=str(path or ""), BOKIN_PICK_OUT=str(out),
+                   BOKIN_PICK_TEXT="Chọn thư mục lưu nhạc")
+        try:
+            r = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-STA", "-ExecutionPolicy", "Bypass",
+                                "-Command", PICK_SCRIPT], capture_output=True, env=env, timeout=3600,
+                               creationflags=subprocess.CREATE_NO_WINDOW)
+        except (OSError, subprocess.TimeoutExpired) as e:
+            raise PickError(f"Không mở được hộp chọn thư mục: {e}") from e
+        if r.returncode != 0:
+            why = r.stderr.decode("utf-8", "replace").strip().splitlines()
+            print(f"pick folder: {r.returncode} {why}", flush=True)
+            raise PickError("Không mở được hộp chọn thư mục" + (f": {why[0][:200]}" if why else ""))
+        return out.read_text(encoding="utf-8").strip() if out.exists() else ""
 
 
 def _folder(value) -> Path:
@@ -290,7 +329,10 @@ def create_app(token: str, port: int = paths.PORTS[0], extra_hosts: tuple = (), 
     def pick(body: dict):
         if not desktop:
             raise HTTPException(400, "Hãy gõ đường dẫn thư mục.")
-        found = pick_folder(str(body.get("start") or ""))
+        try:
+            found = pick_folder(str(body.get("start") or ""))
+        except PickError as err:
+            raise HTTPException(400, f"{err}. Hãy gõ (hoặc dán) đường dẫn thư mục vào ô.") from err
         if found is None:
             raise HTTPException(400, "Hãy gõ đường dẫn thư mục.")
         return {"folder": found}

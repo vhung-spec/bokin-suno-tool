@@ -465,8 +465,11 @@ async function init() {
   if (settings.preset && info.presets[settings.preset]) $("preset").value = settings.preset;
   $("pickFolder").hidden = !info.pick_folder; $("openFolder").hidden = !info.desktop; $("openMaster").hidden = !info.desktop;
   $("pickFolder").onclick = async () => {
-    try { const r = await api("/api/pick-folder", { json: { start: $("folder").value } }); if (r.folder) { $("folder").value = r.folder; saveSettings(); refreshLibrary(); } }
+    const b = $("pickFolder"); b.disabled = true;
+    toast("Đang mở hộp chọn thư mục… (nếu không thấy, bấm vào biểu tượng của nó trên thanh taskbar)");
+    try { const r = await api("/api/pick-folder", { json: { start: $("folder").value } }); if (r.folder) { $("folder").value = r.folder; saveSettings(); refreshLibrary(); toast("Đã chọn thư mục."); } }
     catch (err) { toast(err.message); }
+    finally { b.disabled = false; }
   };
   $("openFolder").onclick = () => api("/api/open", { json: { folder: $("folder").value.trim() } }).catch((err) => toast(err.message));
   $("openMaster").onclick = () => api("/api/open", { json: {} }).catch((err) => toast(err.message));
