@@ -1,0 +1,129 @@
+# Builds the Bokin Suno Studio installer on Windows, tests it, and publishes it as a GitHub Release of this public
+# repository. The repository also publishes Bokin Suno Master, whose installed apps update from the release GitHub
+# marks "Latest" (bokin_suno/updater.py): Bokin Suno Studio's releases are therefore always published with
+# --latest=false, and the workflow checks afterwards that "Latest" is still a Bokin Suno Master release.
+#
+# - studio-v<version>: BokinSunoStudio-Setup-<version>.exe, one release per build;
+# - studio-latest: one release, replaced files only: bokin-suno-studio-latest.json (the manifest the installed apps
+#   read, bokin_studio/updater.py) and BokinSunoStudio-Setup.exe (a fixed name for the guide's download link).
+name: Bokin Suno Studio
+
+on:
+  push:
+    branches: [claude/bokin-suno-studio, main]
+  workflow_dispatch:
+
+permissions:
+  contents: write  # publishing a release in this repository
+
+concurrency:
+  group: bokin-suno-studio-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the app and the build tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[studio,dev]" truststore==0.10.1 pyinstaller==6.22.3 Pillow==11.0.0
+
+      - name: Tests (Bokin Suno Master's and the Studio's; the Studio's page end to end in Chrome against a stand-in Suno)
+        run: python -m pytest -q
+
+      - name: Version
+        shell: pwsh
+        run: |
+          $v = "1.0.${{ github.run_number }}"
+          Set-Content -Path bokin_studio/version.txt -Value $v -NoNewline
+          "APP_VERSION=$v" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Build the app folder
+        run: |
+          python packaging/make_studio_icon.py
+          pyinstaller packaging/BokinSunoStudio.spec --noconfirm
+
+      - name: Self-test of the built app (mastering, the Suno command line, the server and its licence screen)
+        shell: pwsh
+        run: |
+          $p = Start-Process dist/BokinSunoStudio/BokinSunoStudio.exe -ArgumentList "--selftest" -Wait -PassThru
+          Get-Content "$env:APPDATA/Bokin/SunoStudio/app.log"
+          if ($p.ExitCode -ne 0) { throw "selftest failed ($($p.ExitCode))" }
+
+      - name: The built app downloads from the stand-in Suno with Chrome (tests/test_suno.py through BokinSunoStudio.exe suno)
+        shell: pwsh
+        run: |
+          $exe = (Resolve-Path dist/BokinSunoStudio/BokinSunoStudio.exe).Path
+          $env:BOKIN_SUNO_CMD = ConvertTo-Json -Compress @($exe, "suno")
+          python tests/test_suno.py
+          if ($LASTEXITCODE -ne 0) { throw "end-to-end test of the built app failed" }
+
+      - name: Build the installer
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress }
+          & $iscc "/DAppVersion=$env:APP_VERSION" packaging/BokinSunoStudio.iss
+          if ($LASTEXITCODE -ne 0) { throw "iscc failed" }
+          Get-ChildItem dist/*.exe | Format-Table Name, Length
+
+      - name: Install test (fresh install, the app answers, its Suno side runs, then setup again while it runs)
+        run: python packaging/studio_ci_install_test.py install dist/BokinSunoStudio-Setup-${{ env.APP_VERSION }}.exe
+
+      - name: Build a next version (only for the update test, never published)
+        shell: pwsh
+        run: |
+          $next = "$env:APP_VERSION.1"
+          Set-Content -Path bokin_studio/version.txt -Value $next -NoNewline
+          pyinstaller packaging/BokinSunoStudio.spec --noconfirm --distpath dist-next --workpath build-next
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=$next" "/DDistDir=$PWD\dist-next" packaging/BokinSunoStudio.iss
+          if ($LASTEXITCODE -ne 0) { throw "iscc failed" }
+          Set-Content -Path bokin_studio/version.txt -Value $env:APP_VERSION -NoNewline
+          "NEXT_VERSION=$next" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Update test (finds its own next version, not Bokin Suno Master's; Cập nhật ngay installs it and restarts)
+        run: python packaging/studio_ci_install_test.py update dist-next/BokinSunoStudio-Setup-${{ env.NEXT_VERSION }}.exe ${{ env.NEXT_VERSION }}
+
+      # (the release holds the installer: this copy is kept a week, and a full storage quota does not stop the release)
+      - uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with:
+          name: BokinSunoStudio-Setup-${{ env.APP_VERSION }}
+          path: dist/BokinSunoStudio-Setup-*.exe
+          retention-days: 7
+
+      - name: Publish (never Latest, which stays Bokin Suno Master's)
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $repo = "${{ github.repository }}"
+          $latestBefore = gh api "repos/$repo/releases/latest" --jq .tag_name 2>$null
+          $file = (Get-ChildItem dist/BokinSunoStudio-Setup-*.exe).FullName
+          python packaging/studio_release.py $file $env:APP_VERSION release
+          if ($LASTEXITCODE -ne 0) { throw "release files" }
+          gh release create "studio-v$env:APP_VERSION" $file --repo $repo --target ${{ github.sha }} --latest=false --title "Bokin Suno Studio $env:APP_VERSION" --notes-file release/notes.md
+          if ($LASTEXITCODE -ne 0) { throw "release studio-v$env:APP_VERSION" }
+          gh release view studio-latest --repo $repo *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create studio-latest --repo $repo --target ${{ github.sha }} --latest=false --title "Bokin Suno Studio (bản mới nhất)" --notes "Bản mới nhất của Bokin Suno Studio: tải BokinSunoStudio-Setup.exe bên dưới. App đã cài tự cập nhật từ đây (bokin-suno-studio-latest.json)."
+            if ($LASTEXITCODE -ne 0) { throw "release studio-latest" }
+          }
+          gh release upload studio-latest release/BokinSunoStudio-Setup.exe release/bokin-suno-studio-latest.json --repo $repo --clobber
+          if ($LASTEXITCODE -ne 0) { throw "upload to studio-latest" }
+          # "Latest" must still be Bokin Suno Master's: its installed apps read their updates from there
+          $latestAfter = gh api "repos/$repo/releases/latest" --jq .tag_name
+          "Latest before: $latestBefore, after: $latestAfter"
+          if ($latestBefore -and $latestAfter -ne $latestBefore) {
+            gh release edit $latestBefore --repo $repo --latest
+            throw "Latest moved from $latestBefore to $latestAfter: set back to $latestBefore"
+          }

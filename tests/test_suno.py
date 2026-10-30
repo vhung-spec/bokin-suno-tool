@@ -11,6 +11,7 @@ bought), a changed Suno page, the wrong account, a sign-out, removing the accoun
 On Linux without a screen: xvfb-run -a python tests/test_suno.py
 BOKIN_SUNO_CMD (a JSON list) runs another program instead, e.g. the installed Bokin Suno Studio:
   ["C:/.../BokinSunoStudio.exe", "suno"]
+whose output is read from the file BOKIN_STUDIO_OUTPUT names, as the app reads it (an installed app has no console).
 """
 import argparse
 import csv
@@ -72,9 +73,15 @@ def main():
 
     def cli(*args, expect=0, contains=None):
         print(f"\n$ suno {' '.join(args)}", flush=True)
+        output = tmp / "output.txt"
+        if os.environ.get("BOKIN_SUNO_CMD"):
+            output.write_text("", encoding="utf-8")
+            env["BOKIN_STUDIO_OUTPUT"] = str(output)
         r = subprocess.run(base + list(args), env=env, capture_output=True, text=True, encoding="utf-8",
                            errors="replace", timeout=900)
         out = r.stdout + r.stderr
+        if os.environ.get("BOKIN_SUNO_CMD"):
+            out += output.read_text(encoding="utf-8", errors="replace")
         print(out.rstrip())
         check(r.returncode == expect, f"exit code {r.returncode} == {expect}")
         if contains:

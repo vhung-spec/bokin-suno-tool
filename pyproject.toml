@@ -17,15 +17,18 @@ dependencies = [
 dev = ["pytest", "httpx", "pyloudnorm"]  # pyloudnorm: a second opinion in the tests
 # `bokin-suno app`: the local web UI (truststore: Windows' own certificate check for updates)
 app = ["fastapi", "uvicorn[standard]", "python-multipart", "truststore; sys_platform == 'win32'"]
+# Bokin Suno Studio (bokin_studio): the app above, and a real Chrome for the Suno downloader (suno/)
+studio = ["bokin-suno[app]", "patchright==1.63.0"]
 
 [project.scripts]
 bokin-suno = "bokin_suno.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["bokin_suno", "bokin_suno.*", "bokin_license"]
+include = ["bokin_suno", "bokin_suno.*", "bokin_license", "bokin_studio", "bokin_studio.*"]
 
 [tool.setuptools.package-data]
 bokin_suno = ["static/*.html", "version.txt"]
+bokin_studio = ["static/*.html", "version.txt"]
 
 [tool.ruff]
 line-length = 120
