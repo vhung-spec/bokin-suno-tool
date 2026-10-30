@@ -39,6 +39,7 @@ SEL = {
     "menu_item": '[role="menuitem"], [role="menu"] button, [data-radix-popper-content-wrapper] button, '
                  '[data-radix-popper-content-wrapper] [role="button"]',
     "dialog": '[role="dialog"], [role="alertdialog"], [aria-modal="true"]',
+    "toast": '[role="status"], [role="alert"], [data-sonner-toast], [class*="toast" i]',
     # the rows of the download box's list of formats (M4A, MP3, WAV, MP4 video asset, Stems & MIDI)
     "dialog_option": 'button, [role="radio"], [role="option"], [role="menuitemradio"], [role="checkbox"], label, li',
     # the check mark a chosen row of the download box shows (suno.com, October 2026: the row's only icon; the rows
@@ -485,17 +486,30 @@ def list_songs(page, url, log, known=None, known_in_a_row=None, limit_minutes=20
 # ---- one download ----
 
 class Catcher:
-    """Every file Chrome downloads, in any tab, and every tab that opens an audio file directly."""
+    """Every file Chrome downloads, in any tab, and every tab that opens an audio file directly; and when the pages
+    last asked for or received anything (net_at), with how many requests are open (a box still loading its data)."""
 
     def __init__(self, context):
         self.context = context
         self.downloads = []
+        self.net_at, self.open = time.monotonic(), set()
         for p in context.pages:
             self._watch(p)
         context.on("page", self._watch)
 
     def _watch(self, page):
         page.on("download", lambda d: self.downloads.append(d))
+        page.on("request", lambda r: self._net(r, True))
+        page.on("requestfinished", lambda r: self._net(r, False))
+        page.on("requestfailed", lambda r: self._net(r, False))
+
+    def _net(self, request, opened):
+        self.net_at = time.monotonic()
+        (self.open.add if opened else self.open.discard)(id(request))
+
+    def quiet(self, seconds):
+        """Nothing asked for or received for `seconds`, no request open."""
+        return not self.open and time.monotonic() - self.net_at >= seconds
 
     def reset(self):
         self.downloads.clear()
@@ -743,13 +757,15 @@ def download_song(page, catcher, song, fmt, dest, log, timeout_seconds=300):
 STEM_FILES = ("wav", "mp3", "midi")
 STEMS_WAIT = int(os.environ.get("BOKIN_SUNO_STEMS_WAIT") or 20 * 60)  # seconds Suno has to make a song's stems
 FILES_WAIT = 10 * 60  # seconds the stems' files have to arrive once their Download is pressed (MIDI takes longer)
-SETTLE_SECONDS = 12  # the stems box may load a song's stems after it opens: Extract waits this long for them
+# the stems box may load a song's stems after it opens: before Extract, it is given SETTLE_SECONDS, and then until
+# the page has been quiet (no request open, none for NET_QUIET seconds), SETTLE_MAX at most
+SETTLE_SECONDS, NET_QUIET, SETTLE_MAX = 15, 3, 45
 LISTED_WAIT = 180  # stems listed but no Download button: seconds it has to appear
 
-# Whether a row of the stems' Download box is ticked: true, false, or null when the page does not say. The row's own
-# box only: climbing from the label stops before an element that holds another row too. Without an aria-checked
-# (suno.com marks its choices with a check mark, an svg, and nothing else), the row's check mark tells. (Whatever it
-# reads, the files that arrive are checked: a kind asked for and missing fails the song.)
+# Whether a row of the stems' Download box is ticked, as the page states it (aria-checked, a checkbox, data-state):
+# true, false, or null when it does not say. The row's own box only: climbing from the label stops before an element
+# that holds another row too. (suno.com marks its choices with a drawn check mark only: JS_MARKS. Whatever is read, the
+# files that arrive are checked: a kind asked for and missing fails the song.)
 JS_TICKED = r"""(el) => {
   const names = /^(mp3|wav|midi)\b/i;
   const sel = '[role="checkbox"], [aria-checked], input[type="checkbox"], [data-state="checked"], [data-state="unchecked"]';
@@ -765,13 +781,41 @@ JS_TICKED = r"""(el) => {
       if (v != null) return ['true', 'checked', 'on'].includes(v.toLowerCase());
     }
   }
-  for (let r = el, i = 0; r && i < 5; r = r.parentElement, i++) {
-    if (i > 0 && rows(r) > 1) break;
-    if (r.querySelector('svg')) return true;
-    if (i > 0 && r.querySelector('[class*="check" i], [class*="tick" i]')) return false;
-  }
   return null;
 }"""
+
+# What a row draws (its own box: climbing from its label stops before an element holding another label of `names`):
+# [svgs, their shapes]. A tick (or a chosen tempo's check circle) adds a mark; unticking takes it away.
+JS_MARKS = r"""(el, names) => {
+  const re = new RegExp(names, 'i');
+  const rows = (n) => [...n.querySelectorAll('*')].filter(e => e.children.length === 0
+    && re.test((e.textContent || '').trim())).length;
+  let box = el;
+  for (let r = el.parentElement, i = 1; r && i < 5; r = r.parentElement, i++) {
+    if (rows(r) > 1) break;
+    box = r;
+  }
+  return [box.querySelectorAll('svg').length, box.querySelectorAll('path, polyline, circle, rect, line').length];
+}"""
+FILE_ROWS = r"^(mp3|wav|midi)\b"
+TEMPO_ROWS = r"^(fixed|follow) tempo"
+
+
+def _kinds(paths):
+    """The kinds of stems (wav, mp3, midi) among the files received, a zip's own files included."""
+    import zipfile
+    ext = {".wav": "wav", ".mp3": "mp3", ".mid": "midi", ".midi": "midi"}
+    found = set()
+    for path in paths:
+        names = [str(path)]
+        try:
+            if zipfile.is_zipfile(path):
+                with zipfile.ZipFile(path) as z:
+                    names = z.namelist()
+        except (OSError, zipfile.BadZipFile):
+            pass
+        found |= {ext[s] for s in (os.path.splitext(n)[1].lower() for n in names) if s in ext}
+    return found
 
 # What the stems box shows of the song's stems, besides its Download button: how many stems it lists (elements whose
 # whole text is an instrument's name, not the song's title), progress words, "Open in Studio".
@@ -857,11 +901,16 @@ def _in_box(box, pattern, selector=None, text_only=False):
 
 
 def _stop_if_buy(page, title=""):
-    """A box that offers to buy or upgrade, or says the credits are used up: the run stops, nothing is pressed."""
+    """A box that offers to buy or upgrade, or says the credits are used up, or a notice (toast) saying so: the run
+    stops, nothing is pressed."""
     for box in _boxes(page):
         text = _without(_text(box), title)
         if SEL["text_buy"].search(text) or SEL["text_no_credits"].search(text):
             raise SunoError("limit", f"Suno báo hết credit hoặc mời mua thêm: \"{text[:160]}\". Tool dừng, không mua")
+    for note in page.locator(SEL["toast"]).all():
+        text = _without(_text(note), title) if _visible(note) else ""
+        if SEL["text_no_credits"].search(text):
+            raise SunoError("limit", f"Suno báo hết credit: \"{text[:160]}\". Tool dừng, không mua")
 
 
 def _download_box(page):
@@ -932,27 +981,103 @@ def _span(seconds):
     return f"{seconds // 60} phút" if seconds >= 60 else f"{seconds} giây"
 
 
-def _cancel_unsaved(catcher, saved):
-    """Files still coming that were not saved: cancelled, so none lands in the next song's folder."""
-    for d in catcher.downloads[saved:]:
-        try:
-            d.cancel()
-        except Exception:
-            pass
+def _cancel_unsaved(catcher, saved_from, saved):
+    """Files still coming that were not saved (catcher.downloads[saved_from:saved_from + saved] were): cancelled, so
+    none lands in the next song's folder."""
+    for n, d in enumerate(catcher.downloads):
+        if not saved_from <= n < saved_from + saved:
+            try:
+                d.cancel()
+            except Exception:
+                pass
+
+
+def _marks(row, names):
+    try:
+        return row.evaluate(JS_MARKS, names)
+    except Exception:
+        return None
+
+
+def _tick_files(page, files, title, log):
+    """The files box's MP3 / WAV / MIDI rows ticked as asked. What the page states (aria-checked...) tells first; else
+    a click on the row shows which way it went (a tick draws a mark, unticking takes it away) and the row is clicked
+    back when that was the wrong way, or when nothing showed (it stays as Suno shows it: ticked, at first)."""
+    def row_of(kind):
+        return _in_box(_files_box(page), SEL["text_stem_file"][kind], SEL["stem_option"], text_only=True)
+
+    def click(kind):
+        row_of(kind).click()
+        page.wait_for_timeout(300)
+        row = row_of(kind)
+        return _marks(row, FILE_ROWS) if row is not None else None
+
+    for kind in SEL["text_stem_file"]:
+        want, row = kind in files, row_of(kind)
+        if row is None:
+            if want:
+                raise SunoError("stuck", f"Không thấy dòng {kind.upper()} trong hộp Download của stems")
+            continue
+        stated = row.evaluate(JS_TICKED)
+        if stated is not None:
+            if stated != want:
+                row.click()
+                page.wait_for_timeout(300)
+                row = row_of(kind)
+                if row is None or row.evaluate(JS_TICKED) != want:
+                    raise SunoError("stuck", f"Không {'chọn' if want else 'bỏ chọn'} được dòng {kind.upper()} trong "
+                                             "hộp Download của stems")
+            continue
+        before = _marks(row, FILE_ROWS)
+        after = click(kind)
+        if before is None or after is None or after == before:
+            click(kind)  # (nothing showed which way it went: as it was)
+            if not want:
+                log.warning("%s: không biết dòng %s có đang được chọn không: để nguyên", title, kind.upper())
+            continue
+        if (after > before) != want:  # the wrong way: back
+            if click(kind) == after:
+                raise SunoError("stuck", f"Không {'chọn' if want else 'bỏ chọn'} được dòng {kind.upper()} trong "
+                                         "hộp Download của stems")
+
+
+def _pick_tempo(page, tempo, title, log):
+    """Tempo behavior: the row asked for chosen (it then draws a check, the other none)."""
+    box = _files_box(page)
+    row = _in_box(box, SEL["text_tempo"][tempo], SEL["stem_option"], text_only=True)
+    if row is None:
+        log.warning("%s: không thấy mục Tempo behavior (%s): để như Suno chọn sẵn", title, tempo)
+        return
+    row.click()
+    page.wait_for_timeout(300)
+    other = _in_box(_files_box(page), SEL["text_tempo"]["fixed" if tempo == "follow" else "follow"],
+                    SEL["stem_option"], text_only=True)
+    row = _in_box(_files_box(page), SEL["text_tempo"][tempo], SEL["stem_option"], text_only=True)
+    mine = _marks(row, TEMPO_ROWS) if row is not None else None
+    theirs = _marks(other, TEMPO_ROWS) if other is not None else None
+    if mine is not None and theirs is not None and mine < theirs:
+        log.warning("%s: có thể chưa chọn được tempo '%s' (Tempo behavior): MIDI theo cách Suno chọn sẵn", title, tempo)
 
 
 def download_stems(page, catcher, song, dest, log, files=STEM_FILES, tempo="follow", extract=True, extracted_at=None,
-                   on_extract=None, timeout_seconds=None):
+                   on_extract=None, timeout_seconds=None, stop=None):
     """A song's Stems & MIDI: the files Chrome receives, saved into the folder `dest`. Returns (title, [paths]).
 
     Extract (it may use Suno credits) is pressed only when the stems box, given time to load, shows no stems at all
     (none listed, none being made, no Download button), and never for a song whose Extract was pressed before
     (extracted_at: when): such a song's stems are waited for, or left to the person. on_extract(True) is called just
-    before the press, to remember it; on_extract(False) when Suno then refuses it (no credits: nothing was made)."""
+    before the press, to remember it; on_extract(False) when Suno then refuses it (no credits: nothing was made).
+    stop(): true once the person asked to stop: checked while waiting, up to the press of the files' Download (from
+    then on the song is finished)."""
     timeout_seconds = timeout_seconds or STEMS_WAIT
+
+    def check_stop():
+        if stop and stop():
+            raise SunoError("stopped", "Đã dừng theo yêu cầu. Chạy lại để tải tiếp các bài còn thiếu")
+
     page.goto(song.link, wait_until="domcontentloaded", timeout=90_000)
     catcher.reset()
-    saved = []
+    saved, first = [], 0
     try:
         try:
             _open_format_item(page, "wav")  # (opens the download box: More options → Download)
@@ -977,9 +1102,13 @@ def download_stems(page, catcher, song, dest, log, files=STEM_FILES, tempo="foll
             tab.click()
             page.wait_for_timeout(500)
 
-        settle = time.monotonic() + SETTLE_SECONDS  # (the box may load the song's stems after it opens)
+        opened = time.monotonic()  # (the box may load the song's stems after it opens)
         state = _stems_state(page, title)
-        while state != "ready" and time.monotonic() < settle:
+        while state != "ready":
+            waited = time.monotonic() - opened
+            if waited >= SETTLE_MAX or (waited >= SETTLE_SECONDS and catcher.quiet(NET_QUIET)):
+                break
+            check_stop()
             page.wait_for_timeout(250)
             state = _stems_state(page, title)
         deadline, waiting = time.monotonic() + timeout_seconds, "made"
@@ -1020,6 +1149,7 @@ def download_stems(page, catcher, song, dest, log, files=STEM_FILES, tempo="foll
                     raise SunoError("stuck", f"Đã bấm Extract nhưng sau {_span(timeout_seconds)} stems vẫn chưa "
                                              "xong. Lần sau tool không bấm Extract nữa, chỉ chờ và tải")
                 raise SunoError("not_ready", "Suno vẫn đang tách stems của bài này: chạy lại sau ít phút")
+            check_stop()  # (a press is remembered already: stopping here costs nothing)
             try:
                 _stop_if_buy(page, title)
                 if not confirmed:
@@ -1039,34 +1169,20 @@ def download_stems(page, catcher, song, dest, log, files=STEM_FILES, tempo="foll
         go.click()
         if _poll(page, lambda: _files_box(page), 15_000) is None:
             raise SunoError("stuck", "Bấm Download nhưng không thấy hộp chọn file (MP3, WAV, MIDI)")
-        for kind, pattern in SEL["text_stem_file"].items():
-            row = _in_box(_files_box(page), pattern, SEL["stem_option"], text_only=True)
-            if row is None:
-                if kind in files:
-                    raise SunoError("stuck", f"Không thấy dòng {kind.upper()} trong hộp Download của stems")
-                continue
-            state = row.evaluate(JS_TICKED)
-            if state is not None and state != (kind in files):
-                row.click()
-                page.wait_for_timeout(300)
-                if row.evaluate(JS_TICKED) != (kind in files):
-                    raise SunoError("stuck", f"Không chọn được dòng {kind.upper()} trong hộp Download của stems")
-            elif state is None and kind not in files:
-                log.warning("%s: không biết dòng %s đang được chọn hay không: để nguyên", title, kind.upper())
+        _tick_files(page, files, title, log)
         if "midi" in files:
-            row = _in_box(_files_box(page), SEL["text_tempo"][tempo], SEL["stem_option"], text_only=True)
-            if row is not None:
-                row.click()
-                page.wait_for_timeout(300)
+            _pick_tempo(page, tempo, title, log)
+        check_stop()
         _stop_if_buy(page, title)
         final = _in_box(_files_box(page), SEL["text_stems_download"], text_only=True)
         if final is None or not _enabled(final):
             raise SunoError("stuck", "Không thấy nút Download trong hộp chọn file của stems")
+        first = len(catcher.downloads)  # (a file that came before this press is not this song's)
         final.click()
         end, last = time.monotonic() + FILES_WAIT, None
         while time.monotonic() < end:
-            while len(saved) < len(catcher.downloads):
-                d = catcher.downloads[len(saved)]
+            while first + len(saved) < len(catcher.downloads):
+                d = catcher.downloads[first + len(saved)]
                 failure = d.failure()
                 if failure:
                     raise SunoError("stuck", f"Chrome tải file stems lỗi: {failure}")
@@ -1075,19 +1191,19 @@ def download_stems(page, catcher, song, dest, log, files=STEM_FILES, tempo="foll
                 d.save_as(str(path))
                 saved.append(path)
                 last = time.monotonic()
-            if saved and time.monotonic() - last > 10:  # no other file for a while: that was all
+            # no other file for a while: that was all (a while longer while a kind asked for is missing)
+            if saved and time.monotonic() - last > (10 if set(files) <= _kinds(saved) else 60):
                 break
             _stop_if_buy(page, title)
-            for other in _boxes(page):  # a box saying the plan's downloads are used up (only a Close button)
-                if other.get_attribute("data-bokin-box") is None and (
-                        SEL["text_limit"].search(_without(_text(other), title))
-                        or SEL["text_none_left"].search(_without(_text(other), title))):
-                    raise SunoError("limit", f"Suno báo hết lượt tải: \"{_text(other)[:160]}\". Tool dừng")
+            for other in _boxes(page):  # a box saying the plan's downloads are used up
+                text = _without(_text(other), title)
+                if SEL["text_limit"].search(text) or SEL["text_none_left"].search(text):
+                    raise SunoError("limit", f"Suno báo hết lượt tải: \"{text[:160]}\". Tool dừng")
             page.wait_for_timeout(500)
         if not saved:
             raise SunoError("stuck", f"Đã bấm tải stems nhưng sau {_span(FILES_WAIT)} vẫn chưa nhận được file")
     finally:
-        _cancel_unsaved(catcher, len(saved))
+        _cancel_unsaved(catcher, first, len(saved))
     for _ in range(3):  # close the boxes
         page.keyboard.press("Escape")
         page.wait_for_timeout(200)

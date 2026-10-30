@@ -435,7 +435,7 @@ def stems_one(page, catcher, song, out, args, extracted):
         title, got = web.download_stems(page, catcher, song, part / "got", log, files=args.stem_files,
                                         tempo=args.tempo, extract=not args.no_extract,
                                         extracted_at=extracted.get(song.id),
-                                        on_extract=lambda pressed: extracted.note(song.id, pressed))
+                                        on_extract=lambda pressed: extracted.note(song.id, pressed), stop=stop_asked)
         kept = []
         for path in got:
             if zipfile.is_zipfile(path):
@@ -445,7 +445,7 @@ def stems_one(page, catcher, song, out, args, extracted):
                     raise web.SunoError("stuck", str(e)) from e
             elif folder.stem_file_ok(path):
                 unpacked.mkdir(parents=True, exist_ok=True)
-                target = unpacked / folder.safe_filename(path.name.split("-", 1)[-1], "stem")
+                target = unpacked / folder.safe_file_name(path.name.split("-", 1)[-1], "stem")
                 path.replace(target)
                 kept.append(target)
             else:
@@ -454,7 +454,15 @@ def stems_one(page, catcher, song, out, args, extracted):
         if missing:
             raise web.SunoError("stuck", f"File stems Suno gửi không có {', '.join(missing)}")
         dest = out.stems_dir(song, title)
-        unpacked.replace(dest)
+        for attempt in range(20):  # (Windows: an antivirus or the indexer may still hold a new file open a moment)
+            try:
+                unpacked.replace(dest)
+                break
+            except PermissionError as e:
+                if attempt == 19:
+                    raise web.SunoError("stuck", f"Không đổi tên được thư mục stems thành {dest.name}: có chương "
+                                                 "trình đang mở file trong đó") from e
+                time.sleep(0.5)
         out.add_stems(song, dest, title)
         return dest, [dest / p.relative_to(unpacked) for p in kept]
     finally:
@@ -463,7 +471,8 @@ def stems_one(page, catcher, song, out, args, extracted):
 
 def run_stems(page, catcher, songs, out, args, data, name):
     """The Stems & MIDI of these songs, each not done before. Returns (done, failed, stopped reason or "")."""
-    todo = [s for s in songs if not out.stems_ok(s.id) and not out.not_mine(s.id)]
+    # (a song whose audio was downloaded here is the account's own, whatever another account's run wrote)
+    todo = [s for s in songs if not out.stems_ok(s.id) and (out.has_audio(s.id) or not out.not_mine(s.id))]
     if getattr(args, "limit", None) is not None:
         todo = todo[:args.limit]
     log.info("Stems & MIDI (%s, tempo %s): %d bài cần tải%s", ", ".join(f.upper() for f in args.stem_files),
@@ -484,11 +493,18 @@ def run_stems(page, catcher, songs, out, args, data, name):
             log.debug("stems failed", exc_info=True)
             note = describe(e)
             code = getattr(e, "code", "")
+            if code == "stopped":
+                stopped = note
+                break
             if code == "not_mine" and out.has_audio(song.id):
                 # downloaded into this folder before, so the song is the account's own: another account is chosen
                 log.error("%s: stems: bài này đã được tải bằng một tài khoản Suno khác. Chọn đúng tài khoản đó rồi "
                           "bấm lại", label)
                 failed += 1
+                continue
+            if code == "not_mine" and out.failed_before(song.id, folder.STEMS):
+                # one of this folder's songs, tried again: most likely another account's (the folder is shared)
+                log.warning("%s: stems: bài của tài khoản khác, bỏ qua lần này", label)
                 continue
             if code == "not_mine":
                 log.warning("%s: %s", label, note)
@@ -591,6 +607,11 @@ def cmd_download(args, data):
             except Exception as e:
                 log.debug("download failed", exc_info=True)
                 note = describe(e)
+                if getattr(e, "code", "") == "not_mine" and out.has_audio(song.id):
+                    log.error("%s: bài này đã được tải bằng một tài khoản Suno khác. Chọn đúng tài khoản đó rồi chạy "
+                              "lại", label)
+                    failed += 1
+                    continue
                 if getattr(e, "code", "") == "not_mine":
                     log.warning("%s: %s", label, note)
                     others += 1
@@ -770,9 +791,19 @@ def cmd_selftest(args, data):
             pass
         (tmp / "a.mid").write_bytes(b"MThd\x00\x00\x00\x06\x00\x01\x00\x01\x00\x60")
         (tmp / "e.zip").write_bytes(b"<html>403 Forbidden</html>")
-        check(folder.stem_file_ok(tmp / "a.mid") and not folder.stem_file_ok(tmp / "e.zip"), "a stem file, not an error")
+        check(folder.stem_file_ok(tmp / "a.mid") and not folder.stem_file_ok(tmp / "e.zip"),
+              "a stem file, not an error")
         check(folder.stem_kinds([Path("W/a.wav"), Path("b.MP3"), Path("c.mid")]) == {"wav", "mp3", "midi"}
               and folder.stem_kinds([Path("x.txt")]) == set(), "the kinds of stems received")
+        long = "Những ngày mưa " * 6
+        with zipfile.ZipFile(tmp / "long.zip", "w") as w:
+            for kind, ext in (("WAV", "wav"), ("MIDI", "mid")):
+                w.writestr(f"{kind}/{long} (Backing Vocals).{ext}", "x")
+                w.writestr(f"{kind}/{long} (Backing Vocals) .{ext}", "y")  # (the same name once made safe)
+        got = folder.unpack(tmp / "long.zip", tmp / "long")
+        check(folder.stem_kinds(got) == {"wav", "midi"} and len(got) == 4 and len(set(got)) == 4
+              and all(len(p.name) <= folder.NAME_MAX + 6 for p in got), f"long stem names keep their kind {got}")
+        check(web._kinds([tmp / "long.zip", tmp / "a.mid"]) == {"wav", "midi"}, "the kinds in a zip received")
         out = folder.Folder(tmp / "nhac")
         song = web.Song(sid, "Mưa đêm")
         p = out.target(song.title, sid, "wav")
@@ -818,7 +849,8 @@ def cmd_selftest(args, data):
         Extracted(d).note(sid)
         Extracted(d).note("other")
         Extracted(d).note("other", pressed=False)
-        check(Extracted(d).get(sid) and Extracted(d).get("other") is None, "Extract presses remembered (not refused ones)")
+        check(Extracted(d).get(sid) and Extracted(d).get("other") is None,
+              "Extract presses remembered (not refused ones)")
 
         class Page:
             def is_closed(self):
@@ -834,11 +866,14 @@ def cmd_selftest(args, data):
         try:
             out = folder.Folder(tmp / "nhac")
             mine, theirs = web.Song(sid, "Của mình"), web.Song("44444444-2222-3333-4444-555555555555", "Người khác")
+            again = web.Song("55555555-2222-3333-4444-555555555555", "Lần trước lỗi")
             out.add(mine, out.target(mine.title, sid, "wav"), "wav", mine.title)
+            out.add_failure(again, folder.STEMS, "Suno vẫn đang tách stems")
             args = argparse.Namespace(stem_files=web.STEM_FILES, tempo="follow", no_extract=False, limit=None)
-            result = run_stems(Page(), None, [mine, theirs], out, args, d, "suno1")
-            check(result[:2] == (0, 1) and not out.not_mine(sid) and out.not_mine(theirs.id),
-                  f"a song downloaded here is not someone else's: the wrong account {result}")
+            result = run_stems(Page(), None, [mine, theirs, again], out, args, d, "suno1")
+            check(result[:2] == (0, 1) and not out.not_mine(sid) and out.not_mine(theirs.id)
+                  and not out.not_mine(again.id) and out.failed_before(again.id, folder.STEMS),
+                  f"a song downloaded here (or tried here before) is not someone else's: another account {result}")
         finally:
             web.download_stems = real
             log.disabled = False

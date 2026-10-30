@@ -79,10 +79,13 @@ class FakeSuno:
                        "downloads_left": None, "paging": "scroll", "prepare_ms": 800, "more_label": "More options",
                        "clerk_global": True, "download_ui": "box", "box_aria": False,
                        "credits": None, "extract_ms": 1500, "extract_confirm": False, "stems_aria": False,
-                       # the stems box shows the song's stems this long after it opens (loading them); nothing shown
-                       # while the stems are made (no "Extracting..."); the box confirming Extract stays open this long
-                       # after its Extract is pressed (the button still enabled); a kind left out of the stems zip
-                       "stems_load_ms": 0, "extract_silent": False, "confirm_close_ms": 0, "stems_drop": ""}
+                       # the stems box shows the song's stems this long after it opens (loading them from the server);
+                       # nothing shown while the stems are made (no "Extracting..."); the box confirming Extract stays
+                       # open this long after its Extract is pressed (the button still enabled); a kind left out of the
+                       # stems zip; the kinds ticked at first in the files box (Suno remembering the last choice), its
+                       # squares drawn as an svg (a check added when ticked); "Not enough credits" as a notice (toast)
+                       "stems_load_ms": 0, "extract_silent": False, "confirm_close_ms": 0, "stems_drop": "",
+                       "files_start": "mp3,wav,midi", "files_square": False, "credits_ui": "box"}
         self.sessions = set()
         self.signins = 0
         self.songs = {}
@@ -179,6 +182,7 @@ class FakeSuno:
                     return self._send(200, f"<!doctype html><title>Suno</title><p>Opening...</p><script>setTimeout("
                                            f"() => location.replace('/song/{target}'), 400)</script>")
                 if len(parts) == 3 and parts[:2] == ["api", "stems"]:
+                    time.sleep(min(60, int(q.get("wait", ["0"])[0] or 0)) / 1000)  # (a slow server)
                     return self._send(200, json.dumps({"state": fake.stems.get(parts[2], "none")}), "application/json")
                 if len(parts) == 2 and parts[0] == "stemszip" and parts[1].endswith(".zip"):
                     sid = parts[1][:-4]
@@ -223,7 +227,10 @@ class FakeSuno:
                                       "stems_aria": fake.config["stems_aria"],
                                       "stems_load_ms": fake.config["stems_load_ms"],
                                       "extract_silent": fake.config["extract_silent"],
-                                      "confirm_close_ms": fake.config["confirm_close_ms"]})
+                                      "confirm_close_ms": fake.config["confirm_close_ms"],
+                                      "files_start": fake.config["files_start"],
+                                      "files_square": fake.config["files_square"],
+                                      "credits_ui": fake.config["credits_ui"]})
                     similar = "".join(
                         f'<div class="row"><a href="/song/{s}">{html.escape(fake.songs[s]["title"])}</a>'
                         f'<button aria-label="More options">...</button></div>' for s in fake.similar)
@@ -531,6 +538,12 @@ function openStems() {
   }
   function start() {
     fetch(`/api/stems/${cfg.id}/extract`, {method: 'POST'}).then(r => r.json()).then(j => {
+      if (j.credits === false && cfg.credits_ui === 'toast') {
+        const t = el('div'); t.setAttribute('role', 'status'); t.className = 'toast';
+        t.textContent = "You don't have enough credits to extract stems.";
+        document.body.append(t);
+        return;
+      }
       if (j.credits === false) {
         const ask = $('#askdlg'), up = el('button', 'Upgrade'), no = el('button', 'Close');
         up.onclick = () => fetch('/api/pressed?what=upgrade', {method: 'POST'});
@@ -556,14 +569,14 @@ function openStems() {
                       el('p', 'Auto extract from a list of 12 instruments.'), extract, list, dl);
   render();
   if (state === 'extracting') poll();
-  if (cfg.stems_load_ms) setTimeout(() => fetch('/api/stems/' + cfg.id).then(r => r.json()).then(j => {
+  if (cfg.stems_load_ms) fetch(`/api/stems/${cfg.id}?wait=${cfg.stems_load_ms}`).then(r => r.json()).then(j => {
     state = j.state; render(); if (state === 'extracting') poll();
-  }), cfg.stems_load_ms);
+  });
   box.hidden = false;
 }
 function openFiles() {
   const box = $('#filesdlg');
-  const ticked = new Set(['mp3', 'wav', 'midi']);
+  const ticked = new Set(cfg.files_start.split(',').filter(Boolean));
   let tempo = 'follow';
   const files = [['mp3', 'MP3'], ['wav', 'WAV'], ['midi', 'MIDI']].map(([f, label]) => {
     const mark = el('span'); mark.className = 'tick';
@@ -582,7 +595,9 @@ function openFiles() {
   function paint() {
     for (const row of files) {
       const mark = row.firstChild, on = ticked.has(row.dataset.f);
-      mark.innerHTML = on ? ICON : '';
+      const check = on ? '<path d="M3 6l2 2 4-4"/>' : '';  // (files_square: an svg square either way)
+      mark.innerHTML = cfg.files_square ? `<svg width="12" height="12"><rect width="10" height="10"/>${check}</svg>`
+        : (on ? ICON : '');
       if (cfg.stems_aria) { mark.setAttribute('role', 'checkbox'); mark.setAttribute('aria-checked', String(on)); }
     }
     for (const row of tempos) {

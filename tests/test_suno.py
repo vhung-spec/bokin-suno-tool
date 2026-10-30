@@ -26,6 +26,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unicodedata
 from pathlib import Path
@@ -351,6 +352,45 @@ def main():
         cli("stems", "suno1", song_link(zero), "--out", str(nhac), expect=1, contains="Downloads 0")
         check(len(fake.stems_opened) == opened and zero not in fake.extract_clicks, "nothing pressed")
         fake.config["downloads_left"] = None
+
+        print("== the stems list loaded from a slow server (20 s): no Extract")
+        fake.config["stems_load_ms"] = 20000
+        slow_server = fake.add_song("Máy chủ chậm", in_workspace=False)
+        fake.stems[slow_server] = "ready"
+        cli("stems", "suno1", song_link(slow_server), "--out", str(nhac), contains="stems của 1 bài tải xong")
+        check(slow_server not in fake.extract_clicks, "Extract not pressed")
+        fake.config["stems_load_ms"] = 0
+
+        print("== ticks drawn as an svg square, MIDI unticked at first (Suno remembering): all three downloaded")
+        fake.config.update(files_square=True, files_start="mp3,wav")
+        square = fake.add_song("Ô vẽ svg", in_workspace=False)
+        fake.stems[square] = "ready"
+        cli("stems", "suno1", song_link(square), "--out", str(nhac), contains="stems của 1 bài tải xong")
+        check(fake.stems_downloads[-1] == (square, "wav,mp3,midi", "follow"), f"{fake.stems_downloads[-1]}")
+        fake.config.update(files_square=False, files_start="mp3,wav,midi")
+
+        print("== Stop pressed while Suno makes the stems: stopped at once, the press remembered")
+        fake.config["extract_ms"] = 600_000
+        halt = fake.add_song("Dừng giữa chừng", in_workspace=False)
+        stop = tmp / "stop-stems"
+        timer = threading.Timer(25, lambda: stop.write_text("", encoding="utf-8"))
+        timer.start()
+        started = time.monotonic()
+        cli("stems", "suno1", song_link(halt), "--out", str(nhac), expect=1, contains="Đã dừng theo yêu cầu",
+            extra={"BOKIN_SUNO_STOP": str(stop)})
+        timer.cancel()
+        check(time.monotonic() - started < 120 and fake.extract_clicks.count(halt) == 1, "stopped, pressed once")
+        memory = json.loads((data / "stems-extract.json").read_text(encoding="utf-8"))
+        check(halt in memory, "the press remembered")
+        fake.config["extract_ms"] = 1500
+
+        print("== credits used up, said in a notice (toast): stopped, the press forgotten")
+        fake.config.update(credits=0, credits_ui="toast")
+        toast = fake.add_song("Hết credit (thông báo)", in_workspace=False)
+        cli("stems", "suno1", song_link(toast), "--out", str(nhac), expect=1, contains="hết credit")
+        memory = json.loads((data / "stems-extract.json").read_text(encoding="utf-8"))
+        check(toast not in memory and toast not in fake.extract_clicks, "nothing made, nothing remembered")
+        fake.config.update(credits=None, credits_ui="box")
 
         print("== stems with the credits used up: stopped, Upgrade never pressed")
         fake.config["credits"] = 0

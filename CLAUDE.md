@@ -65,12 +65,15 @@
   hộp) → hộp "Download · Auto split · 6 stems" (ô MP3, WAV, MIDI; Tempo behavior Fixed / Follow tempo changes; Cancel /
   Download) → một file zip, giải nén an toàn (`folder.unpack`) vào "Tên bài - stems". Chủ chọn (30/10/2026): bài chưa
   tách thì bấm Extract (có thể tốn credit), tải WAV + MP3 + MIDI, Follow tempo changes; hết credit / Upgrade thì dừng.
-  Extract chỉ bấm khi hộp đã hiện xong (`SETTLE_SECONDS`) mà không có stems nào (đã tách, đang tách, nút Download), và
+  Extract chỉ bấm khi hộp đã hiện xong (ít nhất `SETTLE_SECONDS`, rồi tới khi trang hết tải dữ liệu `NET_QUIET`, tối đa
+  `SETTLE_MAX`) mà không có stems nào (đã tách, đang tách, nút Download), và
   **mỗi bài một lần** (`data/stems-extract.json`, lớp `Extracted`); hộp xác nhận chỉ bấm một lần, nhận ra theo dấu
   `data-bokin-box`/`data-bokin-seen` chứ không theo chữ. Downloads 0 thì dừng trước Manage. Giải nén vào thư mục ẩn, đủ
-  WAV/MP3/MIDI đã chọn mới đổi tên thành thư mục stems. Suno giả lập có đủ các hộp này (`stems`, `credits`,
-  `extract_confirm`, `stems_aria`, `stems_load_ms`, `extract_silent`, `confirm_close_ms`, `stems_drop`; hộp Download
-  biến mất khỏi DOM sau Manage).
+  WAV/MP3/MIDI đã chọn mới đổi tên thành thư mục stems. Ô tick MP3/WAV/MIDI: theo aria nếu có, không thì bấm thử và
+  xem dấu ✓ (svg) thêm hay bớt (`JS_MARKS`). Dừng (`BOKIN_SUNO_STOP`) có hiệu lực cả khi đang chờ Suno tách. Suno giả
+  lập có đủ các hộp này (`stems`, `credits`, `credits_ui`, `extract_confirm`, `stems_aria`, `stems_load_ms`,
+  `extract_silent`, `confirm_close_ms`, `stems_drop`, `files_start`, `files_square`; hộp Download biến mất khỏi DOM
+  sau Manage).
 - Lời bài hát: tải xong một bài, tool lưu lời đang hiện trên trang bài hát vào `Tên bài.txt` cạnh file nhạc
   (`web.JS_LYRICS`, `SEL["lyrics"]`; chưa thử trên suno.com thật). Một tên file (bỏ đuôi) thuộc về một bài.
 - Máy chủ phiên làm việc chỉ có Chromium của Playwright, không có Google Chrome: ở đó `tests/test_suno.py` hỏng từ

@@ -132,7 +132,8 @@ MIDI**, tempo **Follow tempo changes** → **Download**.
 - Hết credit (Suno báo *Not enough credits* hoặc mời Upgrade), hoặc hộp Download ghi **Downloads 0**: app **dừng,
   không bấm gì, không mua thêm**.
 - Bài đã tải stems rồi thì lần sau không tải lại (xoá hoặc chuyển thư mục stems đi thì tải lại).
-- Bấm **Dừng** khi đang tải stems: app tải xong bài đang làm rồi mới dừng.
+- Bấm **Dừng** khi đang tải stems: đang chờ Suno tách thì app dừng ngay (lần sau chỉ chờ và tải, không bấm Extract
+  lại); đang nhận file stems thì app nhận xong bài đó rồi mới dừng.
 - Phần này **chưa thử trên suno.com thật**. Lần đầu nên thử **một bài** (nút **Stems** ở một bài). Lỗi thì gửi ảnh và
   file `.html` trong `%APPDATA%\Bokin\SunoStudio\suno\logs` (che tên tài khoản và email).
 

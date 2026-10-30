@@ -26,8 +26,10 @@ PROGRESS = re.compile(r"^\d\d:\d\d:\d\d  \[(\d+)/(\d+)\] ")  # "12:00:00  [3/20]
 STEMS_START = re.compile(r"^\d\d:\d\d:\d\d  Stems & MIDI \(.*\): (\d+) bài cần tải")  # then [n/N] count the stems
 LISTED = re.compile(r"^(\d+)\t(.*)\t(https?://\S+)$")
 KEEP_LINES = 400
-STOP_GRACE = 30 * 60  # seconds a download has to stop by itself before it is ended (one song: up to 2 x 5
-                      # minutes; its stems: up to 20 minutes, suno/web.py STEMS_WAIT)
+STOP_GRACE = 15 * 60  # seconds a download has to stop by itself (one song: up to 2 x 5 minutes) before it is ended
+# a task with stems: they stop while Suno makes them too, and once their files' Download is pressed they have up to
+# 10 minutes to arrive (suno/web.py FILES_WAIT), then they are unpacked
+STEMS_STOP_GRACE = 25 * 60
 BY_SONG = ("download", "stems")  # the tasks that stop between two songs
 
 
@@ -186,7 +188,8 @@ class SunoTasks:
                 task.stop_file.write_text("", encoding="utf-8")
             except OSError:
                 pass
-            threading.Thread(target=self._end_later, args=(task, STOP_GRACE), daemon=True).start()
+            grace = STEMS_STOP_GRACE if task.kind == "stems" or "--stems" in task.args else STOP_GRACE
+            threading.Thread(target=self._end_later, args=(task, grace), daemon=True).start()
         else:
             self._end(task)
         return True

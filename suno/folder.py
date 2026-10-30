@@ -60,6 +60,16 @@ def safe_filename(title, fallback):
     return name
 
 
+def safe_file_name(name, fallback):
+    """A file name from Suno (a zip's entry) -> a safe one that keeps its extension when it is shortened."""
+    stem, dot, ext = (name or "").rpartition(".")
+    ext = re.sub(r"[^A-Za-z0-9]", "", ext)[:8] if dot and stem.strip(" .") else ""
+    if not ext:
+        return safe_filename(name, fallback)
+    base = safe_filename(stem, fallback)[:NAME_MAX - len(ext) - 1].rstrip(". ") or fallback
+    return f"{base}.{ext}"
+
+
 def audio_ok(path, fmt):
     """Is the file a WAV / MP3 (not an error page saved under that name)?"""
     path = Path(path)
@@ -115,12 +125,17 @@ def unpack(zip_path, dest, limit=UNPACK_MAX):
                 if info.is_dir():
                     continue
                 parts = [p for p in re.split(r"[\\/]", info.filename) if p.strip() not in ("", ".", "..")]
-                parts = [safe_filename(p, "file") for p in parts]
+                parts = ([safe_filename(p, "file") for p in parts[:-1]]
+                         + [safe_file_name(p, "file") for p in parts[-1:]])
                 if not parts:
                     continue
                 target = root.joinpath(*parts)
                 if root not in target.resolve().parents:
                     continue
+                n = 2
+                while target in written:  # (two names that came out the same once made safe)
+                    target = target.with_name(f"{target.stem.rsplit(' (', 1)[0]} ({n}){target.suffix}")
+                    n += 1
                 target.parent.mkdir(parents=True, exist_ok=True)
                 with z.open(info) as src, open(target, "wb") as out:
                     while True:
@@ -176,6 +191,9 @@ class Folder:
 
     def not_mine(self, song_id):
         return any(sid == song_id and r["trang_thai"] == NOT_MINE for (sid, _), r in self.rows.items())
+
+    def failed_before(self, song_id, fmt):
+        return (self.rows.get((song_id, fmt)) or {}).get("trang_thai") == FAILED
 
     def has_audio(self, song_id):
         """Was the song's audio downloaded into this folder (so by the account that owns it)?"""
