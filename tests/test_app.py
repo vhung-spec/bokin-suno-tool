@@ -140,3 +140,38 @@ def test_kiểu_master_of_songs_mastered_before(tmp_path):
                    headers={"X-Bokin-Token": TOKEN})
     styles = {j["id"]: j["style"]["label"] for j in c.get("/api/jobs").json()}
     assert styles == {"20261028-100000-a": "Bossa nova", "20261028-100001-b": "Tuỳ chỉnh"}
+
+
+def test_waveforms_kept_and_a_file_still_open(client, song, tmp_path, monkeypatch):
+    """The waveforms are worked out once (block by block) and kept in the job's folder; a file still open when Xoá
+    is pressed (Windows: a player reading it) leaves the job listed, not a folder nothing lists."""
+    from pathlib import Path
+
+    from bokin_suno.app import _peaks
+
+    files = {"song": ("ngắn.wav", wav_bytes(song[:SR * 2]), "audio/wav")}
+    job = wait(client, client.post("/api/jobs", files=files, data={"settings": "{}"}).json()["id"])
+    assert job["state"] == "done", job
+    folder = tmp_path / "out" / job["id"]
+    kept = json.loads((folder / "peaks.json").read_text(encoding="utf-8"))
+    assert set(kept) == set(job["files"].values()), "worked out when the song was mastered"
+    assert len(kept[job["files"]["master"]]["peaks"]) == 2 * 1200
+    assert _peaks(folder / job["files"]["source"], 1200) == kept[job["files"]["source"]]
+    (tmp_path / "short.wav").write_bytes(wav_bytes(song[:600]))  # (fewer samples than columns)
+    short = _peaks(tmp_path / "short.wav", 1200)
+    assert len(short["peaks"]) == 2 * 600 and short["peaks"][1] == pytest.approx(float(song[0].max()), abs=1e-3)
+
+    real_unlink, tries = Path.unlink, []
+
+    def busy(self, missing_ok=False):
+        if self.suffix == ".wav":
+            tries.append(self.name)
+            raise PermissionError(32, "The process cannot access the file because it is being used")
+        return real_unlink(self, missing_ok=missing_ok)
+    monkeypatch.setattr(Path, "unlink", busy)
+    monkeypatch.setattr("bokin_suno.app.time.sleep", lambda s: None)
+    res = client.delete(f"/api/jobs/{job['id']}")
+    assert res.status_code == 409 and "đang được mở" in res.json()["detail"]
+    assert (folder / "settings.json").is_file() and [j["id"] for j in client.get("/api/jobs").json()] == [job["id"]]
+    monkeypatch.setattr(Path, "unlink", real_unlink)
+    assert client.delete(f"/api/jobs/{job['id']}").status_code == 200 and not folder.exists()

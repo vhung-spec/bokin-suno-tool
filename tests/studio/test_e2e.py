@@ -264,18 +264,24 @@ def test_every_button(studio):
         assert jobs[0]["state"] == "done" and jobs[0]["files"]["master"].endswith("_master_Jazz.wav")
         card = master.locator(".job").first
         assert "Kiểu master: Jazz" in card.locator(".style").inner_text(), "the kiểu master shown"
-        # the compare player: play, switch to Gốc where it plays, the waveform drawn, pause
+        # the compare player: play, switch to Gốc where it plays, to the song's end (the stand-in's songs last 1.25 s),
+        # the waveform drawn
         card.locator("button.play").click()
-        page.wait_for_timeout(1500)
+        heard = "el => el.compare && el.compare.active.currentTime"  # (the page's own variables)
+        deadline = time.time() + 15
+        while not card.evaluate(heard, isolated_context=False) and time.time() < deadline:
+            time.sleep(0.1)
         card.locator(".seg button", has_text="Gốc").click()
         assert card.locator(".seg button[aria-pressed=true]").inner_text() == "Gốc"
-        page.wait_for_timeout(800)
-        assert card.locator(".time").inner_text().startswith("0:01"), card.locator(".time").inner_text()
-        card.locator("button.play").click()
-        assert card.locator("button.play").get_attribute("aria-label") == "Phát"
-        drawn = card.locator("canvas.wave").evaluate(
-            "c => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;"
-            " let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return n; }")
+        assert card.evaluate(heard, isolated_context=False) > 0, "Gốc plays where the master was"
+        card.locator("button.play[aria-label='Phát']").wait_for(timeout=15_000)
+        assert card.locator(".time").inner_text().endswith("/ 0:01"), card.locator(".time").inner_text()
+        drawn, deadline = 0, time.time() + 20
+        while drawn <= 500 and time.time() < deadline:
+            drawn = card.locator("canvas.wave").evaluate(
+                "c => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;"
+                " let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return n; }")
+            time.sleep(0.3)
         assert drawn > 500, "the waveform drawn"
         from bokin_suno.master import preset
         used = json.loads((studio["master"] / jobs[0]["id"] / "settings.json").read_text(encoding="utf-8"))

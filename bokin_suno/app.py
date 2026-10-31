@@ -28,6 +28,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
+import soundfile as sf
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 
@@ -48,6 +49,7 @@ JOB_ID = r"^[0-9]{8}-[0-9]{6}-[A-Za-z0-9_-]{1,40}$"
 SETTINGS_FILE = "settings.json"
 ERROR_FILE = "error.txt"
 PEAK_COLUMNS = 1200  # a waveform's columns (the page's compare player)
+PEAKS_FILE = "peaks.json"  # the waveforms of a job's files, worked out once
 
 
 def _safe_name(name: str) -> str:
@@ -90,6 +92,7 @@ class Jobs:
         self.jobs: dict[str, Job] = {}
         self.lock = threading.Lock()
         self.queue: queue.Queue[Job] = queue.Queue()
+        self.peaks_lock = threading.Lock()  # (one waveform worked out at a time: they read whole files)
         self._load()
         threading.Thread(target=self._worker, daemon=True).start()
 
@@ -170,6 +173,11 @@ class Jobs:
                                      progress=progress, label=(info.get("style") or {}).get("label"))
                 job.report = result.report
                 job.files = self._files(job)
+                for name in job.files.values():  # (the page's waveforms, ready when it asks)
+                    try:
+                        self.peaks(job, name)
+                    except Exception:  # noqa: BLE001 - worked out again when asked
+                        pass
                 job.state = "done"
             except Exception as err:
                 job.error = str(err) or type(err).__name__
@@ -178,15 +186,21 @@ class Jobs:
                 job.state = "failed"
 
     def peaks(self, job: Job, name: str, columns: int = PEAK_COLUMNS) -> dict:
-        """A file's waveform for the page: {"seconds", "peaks": [low, high] per column, both channels}."""
-        if name not in job.peaks:
-            x, sr = audio_io.load(job.dir / name)
-            mono_lo, mono_hi = x.min(axis=1), x.max(axis=1)
-            edges = np.linspace(0, len(x), min(columns, len(x)) + 1).astype(int)[:-1]
-            lo, hi = np.minimum.reduceat(mono_lo, edges), np.maximum.reduceat(mono_hi, edges)
-            job.peaks[name] = {"seconds": round(len(x) / sr, 3),
-                               "peaks": np.round(np.column_stack([lo, hi]).ravel(), 4).tolist()}
-        return job.peaks[name]
+        """A file's waveform for the page: {"seconds", "peaks": [low, high] per column, both channels}. Read block by
+        block, one file at a time, then kept in the job's folder (peaks.json)."""
+        with self.peaks_lock:
+            if not job.peaks:
+                try:
+                    job.peaks = json.loads((job.dir / PEAKS_FILE).read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    job.peaks = {}
+            if name not in job.peaks:
+                job.peaks[name] = _peaks(job.dir / name, columns)
+                try:
+                    (job.dir / PEAKS_FILE).write_text(json.dumps(job.peaks), encoding="utf-8")
+                except OSError:
+                    pass
+            return job.peaks[name]
 
     def list(self) -> list[dict]:
         return [j.to_dict() for j in sorted(self.jobs.values(), key=lambda j: j.id, reverse=True)]
@@ -202,11 +216,56 @@ class Jobs:
         return job
 
     def delete(self, job_id: str) -> None:
+        """The job's folder, its audio files first: one still open (Windows: a player still reading it) leaves the
+        job listed, to be deleted again, instead of a folder nothing lists any more."""
         job = self.get(job_id)
         if job.state == "running":
             raise HTTPException(409, "Đang xử lý, chờ xong rồi xoá")
+        names = [job.song, job.reference, *job.files.values()]
+        for path in [job.dir / n for n in dict.fromkeys(n for n in names if n)]:
+            for attempt in range(10):
+                try:
+                    path.unlink(missing_ok=True)
+                    break
+                except PermissionError:
+                    if attempt == 9:
+                        raise HTTPException(409, f"Không xoá được {path.name}: file đang được mở. Chờ vài giây rồi "
+                                                 "bấm Xoá lại") from None
+                    time.sleep(0.3)
         del self.jobs[job_id]
         shutil.rmtree(job.dir, ignore_errors=True)
+
+
+def _peaks(path: Path, columns: int) -> dict:
+    """The low and high of each of `columns` stretches of a file (both channels), read block by block."""
+    def fill(blocks, n):
+        cols = max(1, min(columns, n))
+        edges = np.linspace(0, n, cols + 1).astype(np.int64)
+        lo, hi = np.full(cols, np.inf, np.float32), np.full(cols, -np.inf, np.float32)
+        pos = 0
+        for block in blocks:
+            m = min(len(block), n - pos)
+            if m <= 0:
+                break
+            bl, bh = block[:m].min(axis=1), block[:m].max(axis=1)
+            c0 = int(np.searchsorted(edges, pos, side="right")) - 1
+            c1 = min(cols - 1, int(np.searchsorted(edges, pos + m - 1, side="right")) - 1)
+            starts = np.maximum(edges[c0:c1 + 1], pos) - pos
+            lo[c0:c1 + 1] = np.minimum(lo[c0:c1 + 1], np.minimum.reduceat(bl, starts))
+            hi[c0:c1 + 1] = np.maximum(hi[c0:c1 + 1], np.maximum.reduceat(bh, starts))
+            pos += m
+        both = np.column_stack([np.where(np.isfinite(lo), lo, 0), np.where(np.isfinite(hi), hi, 0)])
+        return np.round(both.ravel().astype(np.float64), 4).tolist()
+
+    try:
+        info = sf.info(str(path))
+        if info.frames <= 0:
+            raise RuntimeError("no frames")
+        peaks = fill(sf.blocks(str(path), blocksize=1 << 18, dtype="float32", always_2d=True), info.frames)
+        return {"seconds": round(info.frames / info.samplerate, 3), "peaks": peaks}
+    except RuntimeError:  # a format libsndfile cannot read (m4a...): the whole file, through ffmpeg
+        x, sr = audio_io.load(path)
+        return {"seconds": round(len(x) / sr, 3), "peaks": fill([x.astype(np.float32)], len(x))}
 
 
 class Shared:

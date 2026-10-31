@@ -519,19 +519,25 @@ function playerHtml(job) {
   </div>`;
 }
 
+// The waveforms are asked for one at a time, and only for the songs shown on screen.
+let peaksQueue = Promise.resolve();
+const peaksSeen = new IntersectionObserver((entries) => {
+  for (const e of entries) if (e.isIntersecting && e.target.compare) { peaksSeen.unobserve(e.target); e.target.compare.loadPeaks(); }
+});
+
 class Compare {
   constructor(el, job) {
-    this.el = el; this.job = job; this.kind = "master"; this.peaks = {}; this.raf = 0;
+    this.el = el; this.job = job; this.kind = "master"; this.peaks = {}; this.raf = 0; this.broken = new Set();
+    this.at = 0;  // where the song is while its files are let go (another song playing)
     this.audio = {};
     for (const [k] of KINDS) {
       if (!job.files[k]) continue;
-      const a = new Audio(fileUrl(job.id, job.files[k]));
-      a.preload = k === "master" ? "metadata" : "none";
-      a.muted = k !== this.kind;
-      a.onloadedmetadata = () => this.draw();
+      const a = new Audio();
+      a.preload = "none";  // (nothing is read until play: many songs may be listed)
+      a.onended = () => { if (k === this.kind) { this.pause(); this.seek(0); } };
+      a.onerror = () => { if (a.getAttribute("src")) this.fail(k); };
       this.audio[k] = a;
     }
-    for (const [k, a] of Object.entries(this.audio)) a.onended = () => { if (k === this.kind) { this.pause(); this.seek(0); } };
     el.querySelector(".play").onclick = () => (this.playing ? this.pause() : this.play());
     el.querySelectorAll(".seg button").forEach((b) => { b.onclick = () => this.choose(b.dataset.kind); });
     el.querySelector(".fair").onchange = () => this.levels();
@@ -540,15 +546,15 @@ class Compare {
       this.seek(((e.clientX - r.left) / r.width) * this.duration());
     };
     this.levels();
-    this.loadPeaks();
+    peaksSeen.observe(el);
   }
-  get playing() { return !this.active.paused; }
   get active() { return this.audio[this.kind]; }
+  get playing() { return !!this.active.getAttribute("src") && !this.active.paused; }
   duration() {
     const d = this.audio.master.duration;
     return isFinite(d) ? d : (this.peaks.master ? this.peaks.master.seconds : 0);
   }
-  position() { return this.active.currentTime; }
+  position() { return this.active.getAttribute("src") ? this.active.currentTime : this.at; }
   level(kind) {  // a song's louder version is turned down to the other's loudness while listening
     const r = this.job.report;
     if (!this.el.querySelector(".fair").checked || kind === "removed" || !r) return 1;
@@ -559,15 +565,54 @@ class Compare {
     return 1;
   }
   levels() { for (const [k, a] of Object.entries(this.audio)) { a.volume = this.level(k); a.muted = k !== this.kind; } }
+  hold() {  // the files read (again)
+    for (const [k, a] of Object.entries(this.audio)) {
+      if (this.broken.has(k) || a.getAttribute("src")) continue;
+      a.src = fileUrl(this.job.id, this.job.files[k]);
+      a.preload = "auto";
+      a.currentTime = this.at;
+    }
+  }
+  release() {  // the files let go: the browser keeps only a few connections to the app, Windows cannot delete them
+    this.at = this.position();
+    for (const a of Object.values(this.audio)) {
+      a.pause();
+      if (a.getAttribute("src")) { a.removeAttribute("src"); a.load(); }
+    }
+  }
   async play() {
-    if (nowPlaying && nowPlaying !== this) nowPlaying.pause();
+    if (nowPlaying && nowPlaying !== this) { nowPlaying.pause(); nowPlaying.release(); }
     nowPlaying = this;
+    if (this.broken.has(this.kind)) this.choose("master");
+    this.hold();
     const at = this.position() >= this.duration() - 0.05 ? 0 : this.position();
-    for (const a of Object.values(this.audio)) { a.preload = "auto"; a.currentTime = at; }
+    for (const [k, a] of Object.entries(this.audio)) if (!this.broken.has(k)) a.currentTime = at;
     this.levels();
-    try { await Promise.all(Object.values(this.audio).map((a) => a.play())); }
-    catch (err) { this.pause(); toast("Không phát được: " + err.message); return; }
-    this.icon(true); this.tick();
+    const others = Object.entries(this.audio).filter(([k]) => k !== this.kind && !this.broken.has(k));
+    this.icon(true);
+    try { await this.active.play(); }
+    catch (err) {
+      if (err.name !== "AbortError") this.fail(this.kind);
+      if (this.active.paused) this.icon(false);
+      return;
+    }
+    for (const [k, a] of others) a.play().catch((err) => { if (err.name !== "AbortError") this.fail(k); });
+    this.tick();
+  }
+  fail(kind) {  // a file the browser cannot play (an AIFF song, a file deleted): the others still play
+    if (this.broken.has(kind)) return;
+    this.broken.add(kind);
+    const b = this.el.querySelector(`.seg button[data-kind="${kind}"]`);
+    if (b) { b.disabled = true; b.title = "Trình duyệt không phát được file này (vẫn tải về được)."; }
+    if (kind !== this.kind) return;
+    if (kind !== "master" && !this.broken.has("master")) {
+      toast("Không phát được bản này: chuyển sang Đã master.");
+      this.choose("master");
+      this.play();
+    } else {
+      this.pause();
+      toast("Không phát được bản này: trình duyệt không mở được file.");
+    }
   }
   pause() {
     for (const a of Object.values(this.audio)) a.pause();
@@ -575,12 +620,14 @@ class Compare {
   }
   seek(at) {
     at = Math.max(0, Math.min(at, this.duration() || 0));
-    for (const a of Object.values(this.audio)) a.currentTime = at;
+    this.at = at;
+    for (const a of Object.values(this.audio)) if (a.getAttribute("src")) a.currentTime = at;
     this.draw();
   }
   choose(kind) {
-    const at = this.position();
-    if (Math.abs(this.audio[kind].currentTime - at) > 0.03) this.audio[kind].currentTime = at;
+    if (this.broken.has(kind)) return;
+    const at = this.position(), next = this.audio[kind];
+    if (next.getAttribute("src") && Math.abs(next.currentTime - at) > 0.03) next.currentTime = at;
     this.kind = kind;
     this.el.querySelectorAll(".seg button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.kind === kind)));
     this.el.querySelector(".wave-hint").textContent = kind === "removed" ? REMOVED_HINT : WAVE_HINT;
@@ -589,7 +636,7 @@ class Compare {
   sync(slack) {  // the muted ones follow the one listened to (only they are ever moved: nothing heard skips)
     const t = this.position();
     for (const [k, a] of Object.entries(this.audio))
-      if (k !== this.kind && Math.abs(a.currentTime - t) > slack) a.currentTime = t;
+      if (k !== this.kind && a.getAttribute("src") && Math.abs(a.currentTime - t) > slack) a.currentTime = t;
   }
   tick() {
     this.sync(0.04); this.draw();
@@ -600,11 +647,14 @@ class Compare {
     b.querySelector("svg").innerHTML = playing ? PAUSE_ICON : PLAY_ICON;
     b.setAttribute("aria-label", playing ? "Tạm dừng" : "Phát");
   }
-  async loadPeaks() {
+  loadPeaks() {
     for (const k of Object.keys(this.audio)) {
-      try { this.peaks[k] = await api(`/api/peaks/${this.job.id}/${encodeURIComponent(this.job.files[k])}`); }
-      catch (e) { /* (no waveform for this one) */ }
-      this.draw();
+      peaksQueue = peaksQueue.then(async () => {
+        if (!this.el.isConnected) return;
+        try { this.peaks[k] = await api(`/api/peaks/${this.job.id}/${encodeURIComponent(this.job.files[k])}`); }
+        catch (e) { /* (no waveform for this one) */ }
+        this.draw();
+      });
     }
   }
   draw() {
@@ -635,7 +685,7 @@ class Compare {
     g.fillStyle = color("--text"); g.fillRect(x - 1, 0, 2, h);
     this.el.querySelector(".time").textContent = `${fmtTime(this.position())} / ${fmtTime(d)}`;
   }
-  stop() { this.pause(); for (const a of Object.values(this.audio)) a.removeAttribute("src"); if (nowPlaying === this) nowPlaying = null; }
+  stop() { this.pause(); this.release(); peaksSeen.unobserve(this.el); if (nowPlaying === this) nowPlaying = null; }
 }
 window.addEventListener("resize", () => document.querySelectorAll(".job").forEach((el) => el.compare && el.compare.draw()));
 
@@ -687,10 +737,10 @@ function renderJobs(list) {
     const del = el.querySelector("button.danger");
     if (del) del.onclick = async () => {
       if (!confirm(`Xoá "${job.song}" và các file kết quả của nó?`)) return;
+      if (el.compare) el.compare.stop();  // (its files let go first: Windows cannot delete a file being read)
       try {
         await api(`/api/jobs/${job.id}`, { method: "DELETE" });
-        if (el.compare) el.compare.stop();
-        el.remove(); delete rendered[job.id];
+        el.compare = null; el.remove(); delete rendered[job.id];
       }
       catch (err) { toast(err.message); }
     };

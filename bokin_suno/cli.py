@@ -140,6 +140,9 @@ def require_licence() -> None:
 
 
 def main(argv=None):
+    for stream in (sys.stdout, sys.stderr):  # (a file name a console's code page cannot print never stops a batch)
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="replace")
     parser = argparse.ArgumentParser(prog="bokin-suno",
                                      description="Clean up and master songs made with Suno AI.")
     sub = parser.add_subparsers(dest="command", required=True)
