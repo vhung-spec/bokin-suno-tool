@@ -10,12 +10,14 @@
   --bg: #f6f5f2; --panel: #ffffff; --text: #1d1d1f; --muted: #6b6b70; --line: #e3e1dc;
   --accent: #3b5bdb; --accent-text: #ffffff; --ok: #2b8a3e; --warn: #b26a00; --bad: #c92a2a;
   --soft: #eef1fb; --code: #f1f0ec;
+  --wave: #9aa3c7; --wave-master: #3b5bdb; --wave-removed: #c2410c;
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #141416; --panel: #1d1d21; --text: #ececf0; --muted: #9a9aa3; --line: #2e2e35;
     --accent: #7b93ff; --accent-text: #0d0d10; --ok: #69db7c; --warn: #ffc078; --bad: #ff8787;
     --soft: #22263a; --code: #26262c;
+    --wave: #4c5375; --wave-master: #7b93ff; --wave-removed: #ff9f6b;
   }
 }
 * { box-sizing: border-box; }
@@ -70,11 +72,26 @@ td.num { font-variant-numeric: tabular-nums; }
 .state-failed, .state-interrupted { color: var(--bad); }
 .bar { height: 6px; background: var(--soft); border-radius: 3px; overflow: hidden; margin-top: 8px; }
 .bar div { height: 100%; background: var(--accent); width: 0; transition: width .3s; }
-.players { display: grid; gap: 6px; margin-top: 10px; }
-.player { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.player .label { width: 120px; font-size: 13px; color: var(--muted); }
-.player audio { height: 34px; flex: 1 1 260px; }
-.player a { font-size: 13px; color: var(--accent); }
+.job .style { font-size: 13.5px; color: var(--muted); margin-top: 2px; }
+.job .style b { color: var(--text); font-weight: 600; }
+/* the compare player: one play button, Gốc / Đã master / Phần đã khử switched where you are, the waveform */
+.player { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 12px; }
+.player .row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+.seg button { background: var(--panel); color: var(--text); border: 0; border-radius: 0; padding: 7px 12px;
+  cursor: pointer; font-size: 13.5px; font-weight: 400; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); }
+.play { width: 42px; height: 42px; border-radius: 50%; border: 0; background: var(--accent); color: var(--accent-text);
+  cursor: pointer; display: grid; place-items: center; flex: none; padding: 0; }
+.play svg { width: 18px; height: 18px; fill: currentColor; }
+.time { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 13px; color: var(--muted);
+  font-variant-numeric: tabular-nums; }
+canvas.wave { width: 100%; height: 80px; display: block; margin-top: 10px; border-radius: 8px; background: var(--code);
+  cursor: pointer; }
+.player .hint { margin: 4px 0 0; }
+.player .saves { margin-top: 10px; font-size: 13.5px; color: var(--muted); }
+.player .saves a { color: var(--accent); }
 ul.notes { margin: 8px 0 0; padding-left: 20px; font-size: 13.5px; }
 ul.notes li.warn { color: var(--warn); }
 .update { cursor: pointer; border: 0; font: inherit; }
@@ -436,6 +453,7 @@ async function start() {
       form.append("song", song);
       if (ref) form.append("reference", ref);
       form.append("settings", settings);
+      form.append("preset", presetName);  // (the server tells whether the sliders were moved off it)
       await api("/api/jobs", { method: "POST", body: form });
     }
     $("songs").value = ""; updateGo();
@@ -470,32 +488,171 @@ function notesList(r) {
   return `<ul class="notes">${items.map((t) => `<li>${esc(t)}</li>`).join("")}${warn}</ul>`;
 }
 
-function playersHtml(job) {
-  const f = job.files, rows = [];
-  const add = (key, label) => f[key] && rows.push(`<div class="player"><span class="label">${label}</span>
-    <audio controls preload="none" data-kind="${key}" src="${fileUrl(job.id, f[key])}"></audio>
-    <a href="${fileUrl(job.id, f[key], true)}">Tải về</a></div>`);
-  add("source", "Bản gốc"); add("master", "Đã master"); add("removed", "Phần đã khử");
-  return `<div class="players">${rows.join("")}</div>
-    <label class="check" style="margin-top:8px"><input type="checkbox" class="fair" checked>
-      So sánh cùng độ to (bản to hơn được vặn nhỏ lại, để tai không bị đánh lừa)</label>`;
+// ------------------------------------------------------------- compare player
+// The files play together, all but the one listened to muted (and kept in step with it), so Gốc / Đã master / Phần
+// đã khử switch at the same moment of the song; "Nghe so sánh cùng độ to" turns the louder one down while listening
+// (the files are not changed). One song plays at a time.
+const KINDS = [["source", "Gốc"], ["master", "Đã master"], ["removed", "Phần đã khử"]];
+const PLAY_ICON = '<path d="M7 4.5v15l13-7.5z"/>', PAUSE_ICON = '<path d="M6 4h4v16H6zM14 4h4v16h-4z"/>';
+const WAVE_HINT = "Dạng sóng: màu đậm là bản đang nghe, màu nhạt là bản còn lại. Bấm vào để tua.";
+const REMOVED_HINT = "Phần đã khử thường rất nhỏ: dạng sóng được phóng to 8 lần, còn khi nghe nên vặn to loa.";
+const fmtTime = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+let nowPlaying = null;
+
+function playerHtml(job) {
+  const f = job.files;
+  const seg = KINDS.filter(([k]) => f[k]).map(([k, label]) =>
+    `<button type="button" data-kind="${k}" aria-pressed="${k === "master"}">${label}</button>`).join("");
+  const links = [["master", "Bản master"], ["removed", "Phần đã khử"], ["source", "Bản gốc"]].filter(([k]) => f[k])
+    .map(([k, label]) => `<a href="${fileUrl(job.id, f[k], true)}" title="${esc(f[k])}">${label}</a>`).join(" · ");
+  return `<div class="player">
+    <div class="row">
+      <button class="play" type="button" aria-label="Phát"><svg viewBox="0 0 24 24">${PLAY_ICON}</svg></button>
+      <div class="seg" role="group" aria-label="Nghe bản nào">${seg}</div>
+      <span class="time">0:00 / 0:00</span>
+    </div>
+    <canvas class="wave" aria-label="Dạng sóng, bấm để tua"></canvas>
+    <p class="hint wave-hint">${WAVE_HINT}</p>
+    <label class="check" style="margin-top:10px"><input type="checkbox" class="fair" checked> Nghe so sánh cùng độ to</label>
+    <p class="hint">Bản to hơn được vặn nhỏ lại khi nghe, để tai không bị đánh lừa. File lưu về vẫn đủ độ to.</p>
+    <div class="saves">Tải về: ${links}</div>
+  </div>`;
 }
 
-function applyFair(el, job) {
-  const on = el.querySelector(".fair")?.checked;
-  const r = job.report;
-  const src = el.querySelector('audio[data-kind="source"]'), mst = el.querySelector('audio[data-kind="master"]');
-  if (!src || !mst || !r) return;
-  src.volume = 1; mst.volume = 1;
-  const diff = r.output.lufs - r.input.lufs;
-  if (!on || !isFinite(diff)) return;
-  if (diff > 0) mst.volume = Math.pow(10, -diff / 20); else src.volume = Math.pow(10, diff / 20);
+class Compare {
+  constructor(el, job) {
+    this.el = el; this.job = job; this.kind = "master"; this.peaks = {}; this.raf = 0;
+    this.audio = {};
+    for (const [k] of KINDS) {
+      if (!job.files[k]) continue;
+      const a = new Audio(fileUrl(job.id, job.files[k]));
+      a.preload = k === "master" ? "metadata" : "none";
+      a.muted = k !== this.kind;
+      a.onloadedmetadata = () => this.draw();
+      this.audio[k] = a;
+    }
+    for (const [k, a] of Object.entries(this.audio)) a.onended = () => { if (k === this.kind) { this.pause(); this.seek(0); } };
+    el.querySelector(".play").onclick = () => (this.playing ? this.pause() : this.play());
+    el.querySelectorAll(".seg button").forEach((b) => { b.onclick = () => this.choose(b.dataset.kind); });
+    el.querySelector(".fair").onchange = () => this.levels();
+    el.querySelector("canvas.wave").onclick = (e) => {
+      const r = e.currentTarget.getBoundingClientRect();
+      this.seek(((e.clientX - r.left) / r.width) * this.duration());
+    };
+    this.levels();
+    this.loadPeaks();
+  }
+  get playing() { return !this.active.paused; }
+  get active() { return this.audio[this.kind]; }
+  duration() {
+    const d = this.audio.master.duration;
+    return isFinite(d) ? d : (this.peaks.master ? this.peaks.master.seconds : 0);
+  }
+  position() { return this.active.currentTime; }
+  level(kind) {  // a song's louder version is turned down to the other's loudness while listening
+    const r = this.job.report;
+    if (!this.el.querySelector(".fair").checked || kind === "removed" || !r) return 1;
+    const diff = r.output.lufs - r.input.lufs;
+    if (!isFinite(diff)) return 1;
+    if (kind === "master" && diff > 0) return Math.pow(10, -diff / 20);
+    if (kind === "source" && diff < 0) return Math.pow(10, diff / 20);
+    return 1;
+  }
+  levels() { for (const [k, a] of Object.entries(this.audio)) { a.volume = this.level(k); a.muted = k !== this.kind; } }
+  async play() {
+    if (nowPlaying && nowPlaying !== this) nowPlaying.pause();
+    nowPlaying = this;
+    const at = this.position() >= this.duration() - 0.05 ? 0 : this.position();
+    for (const a of Object.values(this.audio)) { a.preload = "auto"; a.currentTime = at; }
+    this.levels();
+    try { await Promise.all(Object.values(this.audio).map((a) => a.play())); }
+    catch (err) { this.pause(); toast("Không phát được: " + err.message); return; }
+    this.icon(true); this.tick();
+  }
+  pause() {
+    for (const a of Object.values(this.audio)) a.pause();
+    cancelAnimationFrame(this.raf); this.icon(false); this.draw();
+  }
+  seek(at) {
+    at = Math.max(0, Math.min(at, this.duration() || 0));
+    for (const a of Object.values(this.audio)) a.currentTime = at;
+    this.draw();
+  }
+  choose(kind) {
+    const at = this.position();
+    if (Math.abs(this.audio[kind].currentTime - at) > 0.03) this.audio[kind].currentTime = at;
+    this.kind = kind;
+    this.el.querySelectorAll(".seg button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.kind === kind)));
+    this.el.querySelector(".wave-hint").textContent = kind === "removed" ? REMOVED_HINT : WAVE_HINT;
+    this.levels(); this.draw();
+  }
+  sync(slack) {  // the muted ones follow the one listened to (only they are ever moved: nothing heard skips)
+    const t = this.position();
+    for (const [k, a] of Object.entries(this.audio))
+      if (k !== this.kind && Math.abs(a.currentTime - t) > slack) a.currentTime = t;
+  }
+  tick() {
+    this.sync(0.04); this.draw();
+    if (this.playing) this.raf = requestAnimationFrame(() => this.tick());
+  }
+  icon(playing) {
+    const b = this.el.querySelector(".play");
+    b.querySelector("svg").innerHTML = playing ? PAUSE_ICON : PLAY_ICON;
+    b.setAttribute("aria-label", playing ? "Tạm dừng" : "Phát");
+  }
+  async loadPeaks() {
+    for (const k of Object.keys(this.audio)) {
+      try { this.peaks[k] = await api(`/api/peaks/${this.job.id}/${encodeURIComponent(this.job.files[k])}`); }
+      catch (e) { /* (no waveform for this one) */ }
+      this.draw();
+    }
+  }
+  draw() {
+    const cv = this.el.querySelector("canvas.wave");
+    if (!cv || !cv.isConnected) return;
+    const dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+    if (!w) return;
+    if (cv.width !== Math.round(w * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+    const g = cv.getContext("2d"), css = getComputedStyle(document.documentElement), color = (n) => css.getPropertyValue(n).trim();
+    g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
+    const wave = (kind, fill, scale) => {
+      const p = this.peaks[kind] && this.peaks[kind].peaks;
+      if (!p || !p.length) return;
+      const cols = p.length / 2;
+      g.fillStyle = fill;
+      for (let c = 0; c < cols; c++) {
+        const lo = Math.max(-1, p[2 * c] * scale), hi = Math.min(1, p[2 * c + 1] * scale);
+        const y0 = h / 2 - hi * (h / 2 - 2), y1 = h / 2 - lo * (h / 2 - 2);
+        g.fillRect((c * w) / cols, y0, Math.max(1, w / cols - 0.3), Math.max(1, y1 - y0));
+      }
+    };
+    if (this.kind === "removed") wave("removed", color("--wave-removed"), 8);
+    else {
+      wave(this.kind === "master" ? "source" : "master", color("--wave"), 1);
+      wave(this.kind, color("--wave-master"), 1);
+    }
+    const d = this.duration(), x = d ? (this.position() / d) * w : 0;
+    g.fillStyle = color("--text"); g.fillRect(x - 1, 0, 2, h);
+    this.el.querySelector(".time").textContent = `${fmtTime(this.position())} / ${fmtTime(d)}`;
+  }
+  stop() { this.pause(); for (const a of Object.values(this.audio)) a.removeAttribute("src"); if (nowPlaying === this) nowPlaying = null; }
+}
+window.addEventListener("resize", () => document.querySelectorAll(".job").forEach((el) => el.compare && el.compare.draw()));
+
+function styleLine(job) {
+  const st = job.style, took = job.report && job.report.seconds_taken;
+  if (!st) return "";
+  return `<div class="style">Kiểu master: <b>${esc(st.label)}</b>${took ? ` · xử lý trong ${fmt(took)} giây` : ""}</div>`;
 }
 
 const rendered = {};
 function renderJobs(list) {
   const box = $("jobs");
-  if (!list.length) { box.innerHTML = '<div class="hint">Chưa có bài nào.</div>'; return; }
+  const drop = (el) => { if (el.compare) el.compare.stop(); el.remove(); };
+  if (!list.length) {
+    Array.from(box.children).forEach(drop);
+    box.innerHTML = '<div class="hint">Chưa có bài nào.</div>'; return;
+  }
   for (const el of Array.from(box.children)) if (!el.id) el.remove();
   const seen = new Set();
   for (const job of list) {
@@ -515,29 +672,33 @@ function renderJobs(list) {
       const pct = job.state === "queued" ? 0 : Math.min(100, 100 * (i + (job.stage === "clean" ? job.fraction : 0.5)) / order.length);
       body = `<div class="bar"><div style="width:${pct}%"></div></div>`;
     } else if (job.state === "done") {
-      body = metricsTable(job.report) + notesList(job.report) + playersHtml(job);
+      body = metricsTable(job.report) + notesList(job.report) + (job.files.master ? playerHtml(job) : "");
     } else if (job.error) {
       body = `<div class="hint">${esc(job.error)}</div>`;
     }
     const ref = job.reference ? ` <span class="hint">· bài mẫu: ${esc(job.reference.replace(/^ref_/, ""))}</span>` : "";
+    if (el.compare) { el.compare.stop(); el.compare = null; }
     el.innerHTML = `<div class="top"><span class="name">${esc(job.song)}${ref}</span>
       <span class="state-${job.state}">${STATES[job.state] || job.state}${esc(stage)}</span>
       ${info.desktop && job.state === "done" ? '<button class="secondary small open">Mở thư mục</button>' : ""}
-      ${job.state === "running" ? "" : '<button class="danger small">Xoá</button>'}</div>${body}`;
+      ${job.state === "running" ? "" : '<button class="danger small">Xoá</button>'}</div>${styleLine(job)}${body}`;
     const open = el.querySelector("button.open");
     if (open) open.onclick = () => api("/api/open", { json: { job: job.id } }).catch((err) => toast(err.message));
     const del = el.querySelector("button.danger");
     if (del) del.onclick = async () => {
       if (!confirm(`Xoá "${job.song}" và các file kết quả của nó?`)) return;
-      try { await api(`/api/jobs/${job.id}`, { method: "DELETE" }); el.remove(); delete rendered[job.id]; }
+      try {
+        await api(`/api/jobs/${job.id}`, { method: "DELETE" });
+        if (el.compare) el.compare.stop();
+        el.remove(); delete rendered[job.id];
+      }
       catch (err) { toast(err.message); }
     };
-    const fair = el.querySelector(".fair");
-    if (fair) { fair.onchange = () => applyFair(el, job); applyFair(el, job); }
+    if (el.querySelector(".player")) el.compare = new Compare(el, job);
   }
   // newest first: keep the DOM in list order
   list.forEach((job) => box.appendChild(document.getElementById("job-" + job.id)));
-  for (const el of Array.from(box.children)) if (!seen.has(el.id.slice(4))) el.remove();
+  for (const el of Array.from(box.children)) if (!seen.has(el.id.slice(4))) drop(el);
 }
 
 async function refresh() {

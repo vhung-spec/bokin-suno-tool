@@ -52,10 +52,18 @@ def test_master_a_song_end_to_end(client, song, tmp_path):
     settings["eq"]["air"] = 1.0
     files = {"song": ("../../Bài 1.wav", wav_bytes(song[: SR * 4]), "audio/wav"),
              "reference": ("ref.wav", wav_bytes(song[: SR * 4] * 0.5), "audio/wav")}
-    res = client.post("/api/jobs", files=files, data={"settings": json.dumps(settings)})
+    res = client.post("/api/jobs", files=files, data={"settings": json.dumps(settings), "preset": "streaming"})
     assert res.status_code == 200, res.text
     job = wait(client, res.json()["id"])
     assert job["state"] == "done", job
+    # the kiểu master: shown, and in the master's file name (the Độ sáng slider moved: "đã chỉnh")
+    assert job["style"] == {"preset": "streaming", "custom": True, "label": "Nghe trực tuyến (đã chỉnh)"}
+    assert job["files"]["master"] == "Bài 1_master_Nghe trực tuyến (đã chỉnh).wav"
+    # the compare player's waveforms
+    peaks = client.get(f"/api/peaks/{job['id']}/{job['files']['master']}").json()
+    assert peaks["seconds"] == pytest.approx(4, abs=0.01) and len(peaks["peaks"]) == 2 * 1200
+    assert all(-1.01 <= v <= 1.01 for v in peaks["peaks"]) and max(peaks["peaks"]) > 0.05
+    assert client.get(f"/api/peaks/{job['id']}/settings.json").status_code == 404
     assert job["song"] == "Bài 1.wav" and job["reference"] == "ref_ref.wav"
     assert set(job["files"]) == {"source", "master", "removed"}
     assert job["report"]["output"]["lufs"] == pytest.approx(-14, abs=0.2)
@@ -71,6 +79,7 @@ def test_master_a_song_end_to_end(client, song, tmp_path):
                        headers={"X-Bokin-Token": TOKEN})
     listed = again.get("/api/jobs").json()
     assert [j["id"] for j in listed] == [job["id"]] and listed[0]["state"] == "done"
+    assert listed[0]["style"] == job["style"]
     assert again.delete(f"/api/jobs/{job['id']}").status_code == 200
     assert again.get("/api/jobs").json() == []
 
@@ -115,3 +124,19 @@ def test_every_preset_fits_the_page_controls():
             low, high, step = float(m["min"]), float(m["max"]), float(m["step"])
             assert low <= value <= high, (name, key, value)
             assert abs((value - low) / step - round((value - low) / step)) < 1e-6, (name, key, value)
+
+
+def test_kiểu_master_of_songs_mastered_before(tmp_path):
+    """A song mastered before the kiểu master was kept: told by its settings."""
+    from bokin_suno.master import preset
+
+    for name, settings in (("20261028-100000-a", preset("bossa").to_dict()),
+                           ("20261028-100001-b", {**preset("jazz").to_dict(), "warmth": 0.9})):
+        d = tmp_path / "out" / name
+        d.mkdir(parents=True)
+        (d / "settings.json").write_text(json.dumps({"song": "a.wav", "reference": None, "settings": settings}),
+                                         encoding="utf-8")
+    c = TestClient(app_mod.create_app(TOKEN, tmp_path / "out", extra_hosts=("testserver",)),
+                   headers={"X-Bokin-Token": TOKEN})
+    styles = {j["id"]: j["style"]["label"] for j in c.get("/api/jobs").json()}
+    assert styles == {"20261028-100000-a": "Bossa nova", "20261028-100001-b": "Tuỳ chỉnh"}

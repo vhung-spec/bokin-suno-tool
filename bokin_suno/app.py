@@ -27,13 +27,14 @@ import traceback
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import numpy as np
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 
 import bokin_license
-from bokin_suno import licensing, paths
+from bokin_suno import audio_io, licensing, paths
 from bokin_suno.audio_io import AUDIO_EXTENSIONS, FORMATS
-from bokin_suno.master import PRESETS, Settings, master_file, preset
+from bokin_suno.master import PRESETS, Settings, master_file, preset, style_of
 
 DEFAULT_PORT = paths.PORTS[0]
 # Answer without the per-launch token: the page (it carries the token) and the "who is there" ping.
@@ -46,6 +47,7 @@ STATIC = Path(__file__).resolve().parent / "static"
 JOB_ID = r"^[0-9]{8}-[0-9]{6}-[A-Za-z0-9_-]{1,40}$"
 SETTINGS_FILE = "settings.json"
 ERROR_FILE = "error.txt"
+PEAK_COLUMNS = 1200  # a waveform's columns (the page's compare player)
 
 
 def _safe_name(name: str) -> str:
@@ -72,11 +74,13 @@ class Job:
     error: str | None = None
     report: dict | None = None
     files: dict = field(default_factory=dict)
+    style: dict | None = None  # the kiểu master (master.style_of)
+    peaks: dict = field(default_factory=dict)  # file name -> its waveform (Jobs.peaks)
 
     def to_dict(self) -> dict:
         return {"id": self.id, "song": self.song, "reference": self.reference,
                 "state": self.state, "stage": self.stage, "fraction": round(self.fraction, 3),
-                "error": self.error, "report": self.report, "files": self.files}
+                "error": self.error, "report": self.report, "files": self.files, "style": self.style}
 
 
 class Jobs:
@@ -97,6 +101,12 @@ class Jobs:
                 continue
             info = json.loads(meta.read_text(encoding="utf-8"))
             job = Job(d.name, d, info["song"], info.get("reference"))
+            job.style = info.get("style")
+            if job.style is None:  # (a song mastered before the kiểu master was kept: told by its settings)
+                try:
+                    job.style = style_of(Settings.from_dict(info["settings"]))
+                except (KeyError, TypeError, ValueError):
+                    pass
             reports = list(d.glob("*_report.json"))
             if reports:
                 job.report = json.loads(reports[0].read_text(encoding="utf-8"))
@@ -115,7 +125,9 @@ class Jobs:
         files = {"source": job.song, "master": r.get("output_file"), "removed": r.get("removed_file")}
         return {k: v for k, v in files.items() if v and (job.dir / v).is_file()}
 
-    def add(self, song: UploadFile, reference: UploadFile | None, settings: Settings) -> Job:
+    def add(self, song: UploadFile, reference: UploadFile | None, settings: Settings,
+            preset_name: str | None = None) -> Job:
+        """preset_name: the kiểu master chosen (the settings may have been moved off it)."""
         song_name = _safe_name(song.filename or "song.wav")
         stamp = time.strftime("%Y%m%d-%H%M%S")
         with self.lock:
@@ -125,7 +137,7 @@ class Jobs:
                 job_id = f"{stamp}-{_slug(song_name)[:36]}-{n}"
             d = self.dir / job_id
             d.mkdir(parents=True)
-            job = Job(job_id, d, song_name)
+            job = Job(job_id, d, song_name, style=style_of(settings, preset_name))
             self.jobs[job_id] = job
         with open(d / song_name, "wb") as f:
             shutil.copyfileobj(song.file, f)
@@ -135,7 +147,7 @@ class Jobs:
                 shutil.copyfileobj(reference.file, f)
             job.reference = ref_name
         (d / SETTINGS_FILE).write_text(json.dumps(
-            {"song": song_name, "reference": job.reference, "settings": settings.to_dict()},
+            {"song": song_name, "reference": job.reference, "settings": settings.to_dict(), "style": job.style},
             indent=2, ensure_ascii=False), encoding="utf-8")
         self.queue.put(job)
         return job
@@ -155,7 +167,7 @@ class Jobs:
                 result = master_file(job.dir / job.song, job.dir,
                                      Settings.from_dict(info["settings"]),
                                      job.dir / job.reference if job.reference else None,
-                                     progress=progress)
+                                     progress=progress, label=(info.get("style") or {}).get("label"))
                 job.report = result.report
                 job.files = self._files(job)
                 job.state = "done"
@@ -164,6 +176,17 @@ class Jobs:
                 (job.dir / ERROR_FILE).write_text(job.error + "\n\n" + traceback.format_exc(),
                                                   encoding="utf-8")
                 job.state = "failed"
+
+    def peaks(self, job: Job, name: str, columns: int = PEAK_COLUMNS) -> dict:
+        """A file's waveform for the page: {"seconds", "peaks": [low, high] per column, both channels}."""
+        if name not in job.peaks:
+            x, sr = audio_io.load(job.dir / name)
+            mono_lo, mono_hi = x.min(axis=1), x.max(axis=1)
+            edges = np.linspace(0, len(x), min(columns, len(x)) + 1).astype(int)[:-1]
+            lo, hi = np.minimum.reduceat(mono_lo, edges), np.maximum.reduceat(mono_hi, edges)
+            job.peaks[name] = {"seconds": round(len(x) / sr, 3),
+                               "peaks": np.round(np.column_stack([lo, hi]).ravel(), 4).tolist()}
+        return job.peaks[name]
 
     def list(self) -> list[dict]:
         return [j.to_dict() for j in sorted(self.jobs.values(), key=lambda j: j.id, reverse=True)]
@@ -313,7 +336,7 @@ def create_app(token: str, out_dir: Path, port: int = DEFAULT_PORT,
 
     @app.post("/api/jobs")
     def add_job(song: UploadFile = File(...), reference: UploadFile | None = File(None),
-                settings: str = Form("{}")):
+                settings: str = Form("{}"), preset_name: str = Form("", alias="preset")):
         try:
             parsed = Settings.from_dict(json.loads(settings))
             parsed.check()
@@ -322,7 +345,7 @@ def create_app(token: str, out_dir: Path, port: int = DEFAULT_PORT,
         for upload in (song, reference):
             if upload is not None and Path(upload.filename or "").suffix.lower() not in AUDIO_EXTENSIONS:
                 raise HTTPException(400, f"Không đọc được loại file này: {upload.filename}")
-        return jobs.add(song, reference, parsed).to_dict()
+        return jobs.add(song, reference, parsed, preset_name if preset_name in PRESETS else None).to_dict()
 
     @app.get("/api/jobs")
     def list_jobs():
@@ -336,6 +359,17 @@ def create_app(token: str, out_dir: Path, port: int = DEFAULT_PORT,
     def delete_job(job_id: str):
         jobs.delete(job_id)
         return {"deleted": job_id}
+
+    @app.get("/api/peaks/{job_id}/{name}")
+    def get_peaks(job_id: str, name: str):
+        """A result file's waveform (the compare player)."""
+        job = jobs.get(job_id)
+        if name not in job.files.values():
+            raise HTTPException(404, "Không có file này")
+        try:
+            return jobs.peaks(job, name)
+        except Exception as err:  # noqa: BLE001 - the player then shows no waveform
+            raise HTTPException(500, f"Không đọc được {name}: {err}") from err
 
     @app.get("/api/files/{job_id}/{name}")
     def get_file(job_id: str, name: str, download: bool = False):

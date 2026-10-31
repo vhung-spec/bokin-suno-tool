@@ -261,7 +261,22 @@ def test_every_button(studio):
         assert "Phố cũ" in master.locator(".job").first.inner_text()
         assert not master.locator("header").first.is_visible()
         jobs = studio["app"].state.jobs.list()
-        assert jobs[0]["state"] == "done" and jobs[0]["files"]["master"].endswith("_master.wav")
+        assert jobs[0]["state"] == "done" and jobs[0]["files"]["master"].endswith("_master_Jazz.wav")
+        card = master.locator(".job").first
+        assert "Kiểu master: Jazz" in card.locator(".style").inner_text(), "the kiểu master shown"
+        # the compare player: play, switch to Gốc where it plays, the waveform drawn, pause
+        card.locator("button.play").click()
+        page.wait_for_timeout(1500)
+        card.locator(".seg button", has_text="Gốc").click()
+        assert card.locator(".seg button[aria-pressed=true]").inner_text() == "Gốc"
+        page.wait_for_timeout(800)
+        assert card.locator(".time").inner_text().startswith("0:01"), card.locator(".time").inner_text()
+        card.locator("button.play").click()
+        assert card.locator("button.play").get_attribute("aria-label") == "Phát"
+        drawn = card.locator("canvas.wave").evaluate(
+            "c => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;"
+            " let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return n; }")
+        assert drawn > 500, "the waveform drawn"
         from bokin_suno.master import preset
         used = json.loads((studio["master"] / jobs[0]["id"] / "settings.json").read_text(encoding="utf-8"))
         assert used["settings"] == preset("jazz").to_dict(), "the Kiểu master chosen (Jazz)"

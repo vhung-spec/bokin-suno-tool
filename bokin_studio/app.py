@@ -496,14 +496,14 @@ def create_app(token: str, port: int = paths.PORTS[0], extra_hosts: tuple = (), 
         if name not in PRESETS:
             raise HTTPException(400, "Không có kiểu master này")
         with open(path, "rb") as f:
-            job = jobs.add(SimpleNamespace(filename=path.name, file=f), None, preset(name))
+            job = jobs.add(SimpleNamespace(filename=path.name, file=f), None, preset(name), name)
         return job.to_dict()
 
     # ---- Bokin Suno Master's API (its page, in the Master tab) ----
 
     @app.post("/api/jobs")
     def add_job(song: UploadFile = File(...), reference: UploadFile | None = File(None),
-                settings: str = Form("{}")):
+                settings: str = Form("{}"), preset_name: str = Form("", alias="preset")):
         try:
             parsed = Settings.from_dict(json.loads(settings))
             parsed.check()
@@ -512,7 +512,7 @@ def create_app(token: str, port: int = paths.PORTS[0], extra_hosts: tuple = (), 
         for upload in (song, reference):
             if upload is not None and Path(upload.filename or "").suffix.lower() not in AUDIO_EXTENSIONS:
                 raise HTTPException(400, f"Không đọc được loại file này: {upload.filename}")
-        return jobs.add(song, reference, parsed).to_dict()
+        return jobs.add(song, reference, parsed, preset_name if preset_name in PRESETS else None).to_dict()
 
     @app.get("/api/jobs")
     def list_jobs():
@@ -526,6 +526,17 @@ def create_app(token: str, port: int = paths.PORTS[0], extra_hosts: tuple = (), 
     def delete_job(job_id: str):
         jobs.delete(job_id)
         return {"deleted": job_id}
+
+    @app.get("/api/peaks/{job_id}/{name}")
+    def get_peaks(job_id: str, name: str):
+        """A result file's waveform (the compare player)."""
+        job = jobs.get(job_id)
+        if name not in job.files.values():
+            raise HTTPException(404, "Không có file này")
+        try:
+            return jobs.peaks(job, name)
+        except Exception as err:  # noqa: BLE001 - the player then shows no waveform
+            raise HTTPException(500, f"Không đọc được {name}: {err}") from err
 
     @app.get("/api/files/{job_id}/{name}")
     def get_file(job_id: str, name: str, download: bool = False):

@@ -240,7 +240,9 @@ def test_send_to_master(client, tmp_path):
             break
         time.sleep(0.3)
     assert state["state"] == "done", state
-    assert state["files"]["master"].endswith("_master.wav")
+    assert state["files"]["master"] == "Mưa đêm_master_Jazz.wav" and state["style"]["label"] == "Jazz"
+    peaks = client.get(f"/api/peaks/{job}/{state['files']['master']}", headers=H).json()
+    assert peaks["seconds"] == pytest.approx(3, abs=0.01) and peaks["peaks"]
     got = client.get(f"/api/files/{job}/{state['files']['master']}", headers=H)
     assert got.status_code == 200 and got.content[:4] == b"RIFF"
     assert client.get("/api/jobs", headers=H).json()[0]["id"] == job

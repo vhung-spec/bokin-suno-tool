@@ -10,6 +10,7 @@ loudness target the song comes out as it went in.
 """
 
 import json
+import re
 import time
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
@@ -161,6 +162,42 @@ PRESETS = {
 }
 
 
+# The presets as people read them (the page shows the same names); a master's file name carries one.
+PRESET_TITLES = {"streaming": "Nghe trực tuyến", "loud": "To", "gentle": "Nhẹ nhàng", "clean_only": "Chỉ làm sạch",
+                 "bossa": "Bossa nova", "jazz": "Jazz", "dark_piano": "Dark piano",
+                 "classical_christmas": "Giáng sinh cổ điển"}
+OUTPUT_FIELDS = ("format", "bits", "sample_rate", "write_removed")  # how the file is written, not how it sounds
+
+
+def _same_sound(a: dict, b: dict) -> bool:
+    """Two settings that master a song the same way (the file's format aside; numbers from the page's sliders)."""
+    def norm(d):
+        return {k: v for k, v in d.items() if k not in OUTPUT_FIELDS}
+
+    def same(x, y):
+        if isinstance(x, dict) and isinstance(y, dict):
+            return x.keys() == y.keys() and all(same(x[k], y[k]) for k in x)
+        if isinstance(x, (int, float)) and isinstance(y, (int, float)) and not isinstance(x, bool):
+            return abs(x - y) < 1e-6
+        return x == y
+    return same(norm(a), norm(b))
+
+
+def style_of(settings: Settings, name: str | None = None) -> dict:
+    """The kiểu master of these settings: {"preset": its name or None, "custom": moved off it, "label": "Bossa nova
+    (đã chỉnh)"}. name: the preset chosen on the page; without it, the preset these settings are, if any."""
+    mine = settings.to_dict()
+    if name in PRESETS:
+        custom = not _same_sound(preset(name).to_dict(), mine)
+    else:
+        name = next((n for n in PRESETS if _same_sound(preset(n).to_dict(), mine)), None)
+        custom = name is None
+    if name is None:
+        return {"preset": None, "custom": True, "label": "Tuỳ chỉnh"}
+    label = PRESET_TITLES.get(name, name) + (" (đã chỉnh)" if custom else "")
+    return {"preset": name, "custom": custom, "label": label}
+
+
 def preset(name: str, **overrides) -> Settings:
     """A preset's settings; `clean` and `eq` overrides may name only some of
     their fields."""
@@ -287,15 +324,17 @@ def _loudness(y: np.ndarray, sr: int, target: float | None, settings: Settings) 
     return out, {"gain_db": round(gain_db, 2), **stats}
 
 
-def output_name(source: Path, settings: Settings) -> str:
-    return f"{source.stem}_master.{settings.format}"
+def output_name(source: Path, settings: Settings, label: str | None = None) -> str:
+    """<name>_master.<fmt>, or with the kiểu master: <name>_master_Bossa nova.<fmt>."""
+    label = re.sub(r'[<>:"/\\|?*\x00-\x1f\s]+', " ", label or "").strip(" .")
+    return f"{source.stem}_master{'_' + label if label else ''}.{settings.format}"
 
 
 def master_file(source: str | Path, out_dir: str | Path, settings: Settings,
                 reference: str | Path | None = None,
-                progress: Progress | None = None) -> Result:
-    """Masters one file into out_dir: <name>_master.<fmt>, <name>_removed.wav
-    (when cleaning ran) and <name>_report.json."""
+                progress: Progress | None = None, label: str | None = None) -> Result:
+    """Masters one file into out_dir: <name>_master.<fmt> (<name>_master_<label>.<fmt> with a label: the kiểu
+    master), <name>_removed.wav (when cleaning ran) and <name>_report.json."""
     source, out_dir = Path(source), Path(out_dir)
     settings.check()
     if progress:
@@ -306,7 +345,7 @@ def master_file(source: str | Path, out_dir: str | Path, settings: Settings,
     sr_out = settings.sample_rate or sr
     if progress:
         progress("write", 0.0)
-    output = audio_io.save(out_dir / output_name(source, settings), y, sr_out,
+    output = audio_io.save(out_dir / output_name(source, settings, label), y, sr_out,
                            settings.format, settings.bits)
     removed_path = None
     if removed is not None and settings.write_removed:

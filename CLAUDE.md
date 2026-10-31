@@ -82,11 +82,17 @@
 
 ## Bokin Suno Studio (app Windows gộp ba công cụ)
 - Hướng dẫn: `BOKIN-SUNO-STUDIO.md`. Nhánh `claude/bokin-suno-studio` (đã gộp nhánh của Bokin Suno Master
-  `claude/suno-ai-mastering-tool-rfg0o5`, gói `bokin_suno/` giữ nguyên để sau gộp tiếp được).
+  `claude/suno-ai-mastering-tool-rfg0o5`; gói `bokin_suno/` dùng chung, chỉ sửa ở đây những gì ghi dưới "Thẻ Master").
 - Gói `bokin_studio/` (tên khác `bokin_suno` của app master): làm theo mẫu app master (FastAPI 127.0.0.1, mã bảo vệ
   mỗi lần mở, cửa sổ Edge/Chrome dạng app, một bản mỗi người dùng). Bốn thẻ: Tài khoản Suno, Tải nhạc (chạy
   `suno/bokin_suno.py` thành chương trình riêng: `BokinSunoStudio.exe suno ...`), Đổi lời (`loi-dong-am/` trong
   khung, không sửa), Master (trang của app master trong khung, cùng API `/api/jobs`...).
+- Thẻ Master (31/10/2026, chủ yêu cầu): mỗi kết quả ghi **Kiểu master** (`master.style_of`, lưu trong `settings.json`
+  của bài, "(đã chỉnh)" khi thanh trượt lệch kiểu đã chọn), tên file `Tên bài_master_<kiểu>.wav`, và trình nghe so
+  sánh như trang Bokin Suno Master trên claude.ai (artifact Sj29KnjpWFXuMTdhC4qfHR): một nút phát, Gốc / Đã master /
+  Phần đã khử chuyển tại chỗ (các file phát cùng lúc, bản không nghe bị tắt tiếng), dạng sóng `/api/peaks/...`, nghe
+  cùng độ to. Phần này sửa trong `bokin_suno/` (trang, `app.py`, `master.py`) trên nhánh Studio: app Bokin Suno Master
+  (nhánh của nó) chưa có, chủ muốn thì chép commit đó sang.
 - Bokin License: sản phẩm `suno-studio`, bit 8 (đã thêm vào `vhung-spec/Bokin-License`, `bokin_license/` chép lại).
 - **Không làm hỏng tự cập nhật của app master:** app master đọc bản phát hành "Latest" của repo này. Bản phát hành
   của Studio luôn `--latest=false`: tag `studio-v<phiên bản>`, và bản `studio-latest` giữ

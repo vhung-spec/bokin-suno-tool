@@ -80,9 +80,10 @@ def _line(m: dict) -> str:
 
 def cmd_master(args) -> int:
     from bokin_suno.audio_io import audio_files
-    from bokin_suno.master import master_file
+    from bokin_suno.master import master_file, style_of
 
     settings = settings_from_args(args)
+    label = style_of(settings, args.preset)["label"]  # (in the master's file name)
     settings.check()  # bad settings fail once, not once per song
     require_licence()
     files = audio_files(args.songs)
@@ -93,7 +94,7 @@ def cmd_master(args) -> int:
     for i, path in enumerate(files, 1):
         print(f"[{i}/{len(files)}] {path.name}", flush=True)
         try:
-            result = master_file(path, args.out, settings, args.reference)
+            result = master_file(path, args.out, settings, args.reference, label=label)
         except Exception as err:  # keep going with the other songs
             print(f"  x {err}", file=sys.stderr)
             failed += 1

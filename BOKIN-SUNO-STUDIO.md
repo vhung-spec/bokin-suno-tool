@@ -142,7 +142,12 @@ MIDI**, tempo **Follow tempo changes** → **Download**.
 - Ở bảng bài đã tải: chọn **Kiểu master** (ví dụ **Nghe trực tuyến**, **Jazz**), rồi bấm **Master** ở bài muốn
   master. Bài được gửi sang thẻ **4. Master** và bắt đầu xử lý.
 - Hoặc mở thẻ **4. Master**, kéo thả file nhạc vào, chỉnh các tuỳ chọn, bấm **Master**.
-- Kết quả nằm trong `Nhạc\Bokin Suno Studio\Master`, mỗi bài một thư mục con (nút **Mở thư mục Master**).
+- Kết quả nằm trong `Nhạc\Bokin Suno Studio\Master`, mỗi bài một thư mục con (nút **Mở thư mục Master**). Tên
+  file master ghi rõ kiểu đã dùng, ví dụ `Tên bài_master_Bossa nova.wav` (chỉnh thanh trượt khỏi kiểu đó thì thêm
+  "(đã chỉnh)").
+- Mỗi kết quả ghi **Kiểu master** đã dùng. Nghe so sánh: bấm nút phát, rồi chuyển **Gốc / Đã master / Phần đã khử**
+  ngay tại chỗ đang nghe; bấm vào dạng sóng để tua. **Nghe so sánh cùng độ to** (bật sẵn) vặn nhỏ bản to hơn khi nghe
+  để tai không bị đánh lừa; file lưu về vẫn đủ độ to.
 
 Các kiểu master và tuỳ chỉnh: phần **Bokin Suno Master** trong [README.md](README.md).
 

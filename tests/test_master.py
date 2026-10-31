@@ -159,6 +159,9 @@ def test_reference_loudness(song):
 def test_master_file_writes_results(tmp_path, wav):
     result = master_file(wav, tmp_path / "out", preset("streaming"))
     assert result.output.name == "Bài hát_master.wav"
+    from bokin_suno.master import output_name
+    assert output_name(wav, preset("bossa"), "Bossa nova") == "Bài hát_master_Bossa nova.wav"
+    assert output_name(wav, preset("bossa"), 'a/b:"c  d.') == "Bài hát_master_a b c d.wav"
     assert result.removed.name == "Bài hát_removed.wav"
     report = json.loads((tmp_path / "out" / "Bài hát_report.json").read_text(encoding="utf-8"))
     assert report["output_file"] == result.output.name
@@ -198,3 +201,16 @@ def test_settings_round_trip_and_validation():
         preset("nope")
     assert set(PRESETS) == {"streaming", "loud", "gentle", "clean_only", "bossa", "jazz", "dark_piano",
                             "classical_christmas"}
+
+
+def test_kiểu_master():
+    from bokin_suno.master import Settings, preset, style_of
+    assert style_of(preset("bossa"), "bossa") == {"preset": "bossa", "custom": False, "label": "Bossa nova"}
+    assert style_of(preset("bossa")) == style_of(preset("bossa"), "bossa"), "told by the settings alone"
+    moved = Settings.from_dict({**preset("dark_piano").to_dict(), "warmth": 0.35})
+    assert style_of(moved, "dark_piano")["label"] == "Dark piano (đã chỉnh)"
+    assert style_of(moved) == {"preset": None, "custom": True, "label": "Tuỳ chỉnh"}
+    as_mp3 = Settings.from_dict({**preset("classical_christmas").to_dict(), "format": "mp3", "bits": 16,
+                                 "sample_rate": 44100})
+    assert style_of(as_mp3, "classical_christmas")["label"] == "Giáng sinh cổ điển", "the format is not the sound"
+    assert style_of(preset("jazz"), "nope")["label"] == "Jazz"

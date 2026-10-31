@@ -22,7 +22,7 @@ def test_master_and_analyze(tmp_path, song, capsys):
     assert "[2/2]" in out and "-10.0 LUFS" in out
     report = json.loads((tmp_path / "out" / "a_report.json").read_text(encoding="utf-8"))
     assert report["settings"]["clean"]["deess"] == 0.3 and report["settings"]["eq"]["air"] == 1.5
-    assert run(["analyze", str(tmp_path / "out" / "a_master.flac"), "--json"]) == 0
+    assert run(["analyze", str(tmp_path / "out" / "a_master_To (đã chỉnh).flac"), "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["lufs"] == pytest.approx(-10, abs=0.15)
 
 
