@@ -529,6 +529,7 @@ class Compare {
   constructor(el, job) {
     this.el = el; this.job = job; this.kind = "master"; this.peaks = {}; this.raf = 0; this.broken = new Set();
     this.at = 0;  // where the song is while its files are let go (another song playing)
+    this.known = 0;  // its length, once a file has told it
     this.audio = {};
     for (const [k] of KINDS) {
       if (!job.files[k]) continue;
@@ -536,6 +537,7 @@ class Compare {
       a.preload = "none";  // (nothing is read until play: many songs may be listed)
       a.onended = () => { if (k === this.kind) { this.pause(); this.seek(0); } };
       a.onerror = () => { if (a.getAttribute("src")) this.fail(k); };
+      a.ondurationchange = () => { if (isFinite(a.duration) && a.duration > 0) this.known = a.duration; };
       this.audio[k] = a;
     }
     el.querySelector(".play").onclick = () => (this.playing ? this.pause() : this.play());
@@ -550,9 +552,8 @@ class Compare {
   }
   get active() { return this.audio[this.kind]; }
   get playing() { return !!this.active.getAttribute("src") && !this.active.paused; }
-  duration() {
-    const d = this.audio.master.duration;
-    return isFinite(d) ? d : (this.peaks.master ? this.peaks.master.seconds : 0);
+  duration() {  // 0: not known yet
+    return this.known || (this.peaks.master ? this.peaks.master.seconds : 0);
   }
   position() { return this.active.getAttribute("src") ? this.active.currentTime : this.at; }
   level(kind) {  // a song's louder version is turned down to the other's loudness while listening
@@ -581,19 +582,25 @@ class Compare {
     }
   }
   async play() {
+    if (this.broken.has(this.kind)) {  // (the one chosen cannot play: the first that can, master first)
+      const ok = ["master", "source", "removed"].find((k) => this.audio[k] && !this.broken.has(k));
+      if (!ok) { toast("Không phát được bài này: trình duyệt không mở được các file của nó."); return; }
+      this.choose(ok);
+    }
     if (nowPlaying && nowPlaying !== this) { nowPlaying.pause(); nowPlaying.release(); }
     nowPlaying = this;
-    if (this.broken.has(this.kind)) this.choose("master");
     this.hold();
-    const at = this.position() >= this.duration() - 0.05 ? 0 : this.position();
+    const d = this.duration(), pos = this.position();
+    const at = d && pos >= d - 0.05 ? 0 : pos;
     for (const [k, a] of Object.entries(this.audio)) if (!this.broken.has(k)) a.currentTime = at;
     this.levels();
-    const others = Object.entries(this.audio).filter(([k]) => k !== this.kind && !this.broken.has(k));
+    const kind = this.kind, active = this.active;  // (a failing file may switch this.kind meanwhile)
+    const others = Object.entries(this.audio).filter(([k]) => k !== kind && !this.broken.has(k));
     this.icon(true);
-    try { await this.active.play(); }
+    try { await active.play(); }
     catch (err) {
-      if (err.name !== "AbortError") this.fail(this.kind);
-      if (this.active.paused) this.icon(false);
+      if (err.name !== "AbortError") this.fail(kind);
+      if (this.active === active && active.paused) this.icon(false);
       return;
     }
     for (const [k, a] of others) a.play().catch((err) => { if (err.name !== "AbortError") this.fail(k); });
@@ -619,7 +626,8 @@ class Compare {
     cancelAnimationFrame(this.raf); this.icon(false); this.draw();
   }
   seek(at) {
-    at = Math.max(0, Math.min(at, this.duration() || 0));
+    const d = this.duration();
+    at = Math.max(0, d ? Math.min(at, d) : at);
     this.at = at;
     for (const a of Object.values(this.audio)) if (a.getAttribute("src")) a.currentTime = at;
     this.draw();
@@ -737,12 +745,13 @@ function renderJobs(list) {
     const del = el.querySelector("button.danger");
     if (del) del.onclick = async () => {
       if (!confirm(`Xoá "${job.song}" và các file kết quả của nó?`)) return;
+      del.disabled = true; del.textContent = "Đang xoá…";
       if (el.compare) el.compare.stop();  // (its files let go first: Windows cannot delete a file being read)
       try {
         await api(`/api/jobs/${job.id}`, { method: "DELETE" });
         el.compare = null; el.remove(); delete rendered[job.id];
       }
-      catch (err) { toast(err.message); }
+      catch (err) { toast(err.message); del.disabled = false; del.textContent = "Xoá"; }
     };
     if (el.querySelector(".player")) el.compare = new Compare(el, job);
   }

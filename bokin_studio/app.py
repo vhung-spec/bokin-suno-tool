@@ -541,7 +541,7 @@ def create_app(token: str, port: int = paths.PORTS[0], extra_hosts: tuple = (), 
     @app.get("/api/files/{job_id}/{name}")
     def get_file(job_id: str, name: str, download: bool = False):
         job = jobs.get(job_id)
-        if name not in job.files.values():
+        if name not in job.files.values() or not (job.dir / name).is_file():  # (moved or deleted by hand)
             raise HTTPException(404, "Không có file này")
         return FileResponse(job.dir / name, filename=name if download else None,
                             content_disposition_type="attachment" if download else "inline")

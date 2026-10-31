@@ -232,7 +232,7 @@ class Jobs:
                         raise HTTPException(409, f"Không xoá được {path.name}: file đang được mở. Chờ vài giây rồi "
                                                  "bấm Xoá lại") from None
                     time.sleep(0.3)
-        del self.jobs[job_id]
+        self.jobs.pop(job_id, None)  # (pressed twice: the second finds it gone)
         shutil.rmtree(job.dir, ignore_errors=True)
 
 
@@ -433,7 +433,7 @@ def create_app(token: str, out_dir: Path, port: int = DEFAULT_PORT,
     @app.get("/api/files/{job_id}/{name}")
     def get_file(job_id: str, name: str, download: bool = False):
         job = jobs.get(job_id)
-        if name not in job.files.values():
+        if name not in job.files.values() or not (job.dir / name).is_file():  # (moved or deleted by hand)
             raise HTTPException(404, "Không có file này")
         return FileResponse(job.dir / name, filename=name if download else None,
                             content_disposition_type="attachment" if download else "inline")
