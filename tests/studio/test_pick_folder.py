@@ -43,7 +43,7 @@ def dialogs():
 def find_dialog(before, seconds=60):
     """The picker's dialog: one that was not shown before it was opened (another program's may be up)."""
     if before:
-        warnings.warn(f"other dialogs already shown: {list(before.values())}")  # (in the test summary)
+        warnings.warn(f"other dialogs already shown: {list(before.values())}", stacklevel=2)  # (test summary)
     deadline = time.time() + seconds
     while time.time() < deadline:
         user32, now = dialogs()
