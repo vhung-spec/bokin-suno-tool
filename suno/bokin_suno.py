@@ -274,9 +274,12 @@ def read_links(texts):
     return links
 
 
-def gather_songs(data, page, name, account, links, known=None, known_in_a_row=None):
+def gather_songs(data, page, name, account, links, known=None, known_in_a_row=None, report=None):
     """The songs at every link, each once, in the order shown, and how many links could not be read (a bad link is
-    skipped when there are others)."""
+    skipped when there are others). report (a dict), if given, gets "partial": the links read but not to their end,
+    "bad": the links not read."""
+    report = {} if report is None else report
+    report.setdefault("partial", []), report.setdefault("bad", [])
     try:
         web.ensure_account(page, account.get("user_id"))
     except Exception as e:
@@ -294,7 +297,10 @@ def gather_songs(data, page, name, account, links, known=None, known_in_a_row=No
                 raise UserError(describe(e))
             log.error("%s: %s", url, describe(e))
             bad += 1
+            report["bad"].append(url)
             continue
+        if not getattr(found, "complete", True):
+            report["partial"].append(url)
         if len(links) > 1:
             log.info("%s: %d bài", url, len(found))
         for song in found:
@@ -381,7 +387,7 @@ def download_one(page, catcher, song, fmt, out, label, others=False):
         path = out.target(title, song.id, fmt)
         part.replace(path)
         try:
-            out.add(song, path, fmt, title)
+            out.add(song, path, fmt, title, folder.THEIRS if song.theirs else "")
         except Exception:
             with contextlib.suppress(OSError):  # (not listed: not kept either, or the next run makes "Title (2)")
                 path.unlink()
@@ -490,8 +496,13 @@ def run_stems(page, catcher, songs, out, args, data, name, retried=()):
     """The Stems & MIDI of these songs, each not done before. retried: the ids of songs not at the links, tried again
     because they failed before in this folder (another account's songs, maybe: the folder may be shared). Returns
     (done, failed, stopped reason or "")."""
-    # (a song whose audio was downloaded here is the account's own, whatever another account's run wrote)
-    todo = [s for s in songs if not out.stems_ok(s.id) and (out.has_audio(s.id) or not out.not_mine(s.id))]
+    # (a song whose audio was downloaded here is the account's own, whatever another account's run wrote; one
+    # downloaded as another account's, as asked, gets no stems: their stems are that account's to make)
+    theirs = [s for s in songs if not out.stems_ok(s.id) and out.theirs(s.id)]
+    if theirs:
+        log.info("Stems & MIDI: %d bài của tài khoản khác (tải theo ô tick): không tải stems", len(theirs))
+    todo = [s for s in songs if not out.stems_ok(s.id) and not out.theirs(s.id)
+            and (out.has_audio(s.id) or not out.not_mine(s.id))]
     if getattr(args, "limit", None) is not None:
         todo = todo[:args.limit]
     log.info("Stems & MIDI (%s, tempo %s): %d bài cần tải%s", ", ".join(f.upper() for f in args.stem_files),
@@ -582,24 +593,31 @@ def cmd_stems(args, data):
 UNFINISHED = "chua-xong.json"
 
 
-def unfinished(data, root):
+def _unfinished_read(data):
     try:
-        return str(root) in json.loads((data.root / UNFINISHED).read_text(encoding="utf-8"))
+        marks = json.loads((data.root / UNFINISHED).read_text(encoding="utf-8"))
     except (OSError, ValueError, TypeError):
-        return False
+        return {}
+    return {k: set(v) for k, v in marks.items() if isinstance(v, list)} if isinstance(marks, dict) else {}
 
 
-def set_unfinished(data, root, flag):
-    path = data.root / UNFINISHED
-    try:
-        roots = set(json.loads(path.read_text(encoding="utf-8")))
-    except (OSError, ValueError, TypeError):
-        roots = set()
-    if (str(root) in roots) == flag:
+def unfinished(data, root, keys):
+    """Is one of these links (each "<format> <link>") of the folder marked as not got through?"""
+    return bool(_unfinished_read(data).get(str(root), set()) & set(keys))
+
+
+def set_unfinished(data, root, keys, flag):
+    marks = _unfinished_read(data)
+    have = marks.setdefault(str(root), set())
+    before = set(have)
+    (have.update if flag else have.difference_update)(keys)
+    if have == before:
         return
-    (roots.add if flag else roots.discard)(str(root))
+    if not have:
+        del marks[str(root)]
     with contextlib.suppress(OSError):
-        path.write_text(json.dumps(sorted(roots), ensure_ascii=False), encoding="utf-8")
+        (data.root / UNFINISHED).write_text(json.dumps({k: sorted(v) for k, v in marks.items()}, ensure_ascii=False),
+                                            encoding="utf-8")
 
 
 # A song the ⋯ menu showed to be another account's (its note says so, and which account looked): not opened again on
@@ -630,25 +648,30 @@ def cmd_download(args, data):
         raise UserError(str(e))
     started = time.monotonic()
     done = failed = others = size = 0
+    stems_done = None
     stopped = ""
     with single_run(data), browser(args, data, name, args.headless) as context:
         page = first_page(context)
         # (with --stems the whole list is read: a song without its stems may be anywhere in it; a song written down as
         # someone else's is not known: it is looked at again)
-        whole = args.full or args.stems or unfinished(data, out.root)
+        keys = [f"{fmt} {url}" for url in links]  # (the marker of a run that did not get through its songs)
+        whole = args.full or args.stems or unfinished(data, out.root, keys)
         if whole and not (args.full or args.stems):
-            log.info("Lần tải trước vào thư mục này chưa tải hết các bài: đọc hết danh sách")
+            log.info("Lần tải trước của link này vào thư mục này chưa tải hết các bài: đọc hết danh sách")
+        report = {}
         songs, bad = gather_songs(data, page, name, account, links,
                                   lambda sid: out.done(sid, fmt) and (not args.stems or out.stems_ok(sid)),
-                                  None if whole else KNOWN_IN_A_ROW)
+                                  None if whole else KNOWN_IN_A_ROW, report)
         # (a song written down as someone else's is looked at again, unless its ⋯ menu showed it with this account:
         # the page decides, nothing pressed if so)
         settled = [s for s in songs
                    if not out.done(s.id, fmt) and not args.others and settled_not_mine(out, s.id, name)]
         skip = {s.id for s in settled}
         todo = [s for s in songs if not out.done(s.id, fmt) and s.id not in skip]
-        # songs that failed before go last: one that fails every time never keeps the others from being tried
-        todo = [s for s in todo if not out.failed_before(s.id, fmt)] + [s for s in todo if out.failed_before(s.id, fmt)]
+        # songs that failed before go last, the one that failed longest ago first: one that fails every time never
+        # keeps the others from being tried
+        todo = [s for s in todo if not out.failed_before(s.id, fmt)] + sorted(
+            (s for s in todo if out.failed_before(s.id, fmt)), key=lambda s: out.failed_at(s.id, fmt))
         log.info("Đọc được %d bài: %d bài đã tải từ trước, %d bài cần tải %s vào %s", len(songs),
                  len(songs) - len(todo) - len(settled), len(todo), fmt.upper(), out.root)
         if settled:
@@ -660,7 +683,8 @@ def cmd_download(args, data):
             log.info("%d bài lần trước ghi là của người khác: xem lại%s", recheck,
                      " (tải cả bài của người khác)" if args.others else "")
         listed = {s.id for s in songs}
-        again = [web.Song(sid, title) for sid, title in out.failed(fmt) if sid not in listed]
+        again = sorted((web.Song(sid, title) for sid, title in out.failed(fmt) if sid not in listed),
+                       key=lambda s: out.failed_at(s.id, fmt))
         retried = {s.id for s in again}
         if again:
             log.info("Thêm %d bài lần trước bị lỗi: thử lại", len(again))
@@ -670,18 +694,19 @@ def cmd_download(args, data):
             todo = todo[:args.limit]
             log.info("Lần này chỉ tải %d bài (--limit)", len(todo))
         check_space(out.root, len(todo), fmt)
-        if todo:
-            set_unfinished(data, out.root, True)
+        if todo or report["partial"]:
+            set_unfinished(data, out.root, keys, True)
         catcher = web.Catcher(context)
-        stuck = 0
+        stuck = old_stuck = 0
+        tried_before = {s.id for s in todo if out.failed_before(s.id, fmt)}
         loop_started = time.monotonic()
         for n, song in enumerate(todo, 1):
             if stop_asked():
                 stopped = "Đã dừng theo yêu cầu. Chạy lại để tải tiếp các bài còn thiếu"
                 break
             label = f"[{n}/{len(todo)}] {song.title or song.id}"
-            try:
-                path = download_one(page, catcher, song, fmt, out, label, args.others)
+            try:  # (--others: the songs at the links only, not this folder's other failed songs)
+                path = download_one(page, catcher, song, fmt, out, label, args.others and song.id not in retried)
             except Exception as e:
                 log.debug("download failed", exc_info=True)
                 note = describe(e)
@@ -711,13 +736,20 @@ def cmd_download(args, data):
                     out.add_failure(song, fmt, note)  # tried again on the next run
                 if code != "not_ready":
                     keep_failure(data, page, name)
-                    stuck += 1  # (the songs that failed before are tried last: they never keep the others back)
+                    if song.id in tried_before:  # (tried last: such songs failing again keep nothing else back)
+                        old_stuck += 1
+                        if old_stuck >= STUCK_IN_A_ROW:
+                            log.warning("%d bài từng lỗi lại lỗi liền nhau: lần này bỏ qua các bài từng lỗi còn lại "
+                                        "(lần sau thử lại)", STUCK_IN_A_ROW)
+                            break
+                        continue
+                    stuck += 1
                     if stuck >= STUCK_IN_A_ROW:
                         stopped = (f"{STUCK_IN_A_ROW} bài liền nhau không tải được: có thể Suno đã đổi giao diện. "
                                    f"Gửi các file loi-*.png và loi-*.html trong {data.logs} cho người sửa tool")
                         break
                 continue
-            stuck = 0
+            stuck = old_stuck = 0
             done += 1
             size += path.stat().st_size
             left = len(todo) - n
@@ -726,17 +758,20 @@ def cmd_download(args, data):
                 eta = f" (còn {left} bài, khoảng {human_time((time.monotonic() - loop_started) / n * left)})"
             log.info("%s: xong → %s%s", label, path.name, eta)
             page.wait_for_timeout(PACE_SECONDS * 1000)
-        if not stopped and not cut:
-            set_unfinished(data, out.root, False)
+        if not stopped and not cut:  # (a link not read to its end, or not read, stays marked)
+            done_keys = [f"{fmt} {url}" for url in links if url not in report["partial"] + report["bad"]]
+            set_unfinished(data, out.root, done_keys, False)
         if args.stems and not stopped:  # the Stems & MIDI of the songs of these links that are downloaded
             listed = [s for s in songs + again if out.done(s.id, fmt)]
             s_done, s_failed, stopped = run_stems(page, catcher, listed, out, args, data, name, retried)
             log.info("Stems & MIDI: %d bài xong, %d bài lỗi", s_done, s_failed)
             failed += s_failed
+            stems_done = s_done
     if stopped:
         log.error("Đã dừng: %s", stopped)
-    log.info("Tổng: %d bài tải xong, %d bài lỗi%s (%s trong %s). Danh sách: %s", done, failed,
-             f", {others} bài của người khác (bỏ qua)" if others else "", human_size(size),
+    log.info("Tổng: %d bài tải xong, %d bài lỗi%s%s (%s trong %s). Danh sách: %s", done, failed,
+             f", {others} bài của người khác (bỏ qua)" if others else "",
+             f", stems của {stems_done} bài" if stems_done is not None else "", human_size(size),
              human_time(time.monotonic() - started), out.list_path)
     return 1 if failed or stopped or bad else 0
 
@@ -988,11 +1023,17 @@ def cmd_selftest(args, data):
         check(settled_not_mine(out, seen.id, "suno1") and not settled_not_mine(out, seen.id, "suno2")
               and not settled_not_mine(out, old.id, "suno1") and not settled_not_mine(out, sid, "suno1"),
               "a skipped song is not opened again only when its ⋯ menu was seen with this account")
-        check(not unfinished(d, out.root), "a folder not downloaded into yet is finished")
-        set_unfinished(d, out.root, True)
-        check(unfinished(d, out.root) and not unfinished(d, tmp), "a download that did not get through its songs")
-        set_unfinished(d, out.root, False)
-        check(not unfinished(d, out.root), "the next one that did")
+        ws, one = "wav https://suno.com/create?wid=1", "wav https://suno.com/s/abc"
+        check(not unfinished(d, out.root, [ws]), "a folder not downloaded into yet is finished")
+        set_unfinished(d, out.root, [ws], True)
+        check(unfinished(d, out.root, [ws]) and not unfinished(d, tmp, [ws]) and not unfinished(d, out.root, [one])
+              and not unfinished(d, out.root, ["mp3 https://suno.com/create?wid=1"]),
+              "a download of a link that did not get through its songs: that link, format and folder")
+        set_unfinished(d, out.root, [one], True)
+        set_unfinished(d, out.root, [one], False)  # (another link into the same folder, got through)
+        check(unfinished(d, out.root, [ws]), "another link's download into the folder leaves the mark")
+        set_unfinished(d, out.root, [ws], False)
+        check(not unfinished(d, out.root, [ws, one]), "the next download of that link that did")
     check(web.newest_first("https://suno.com/create?wid=abc") and web.newest_first("https://suno.com/create")
           and web.newest_first("https://suno.com/me") and not web.newest_first("https://suno.com/playlist/abc")
           and not web.newest_first("https://suno.com/@someone"), "only a workspace lists the newest songs first")

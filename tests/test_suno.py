@@ -237,6 +237,12 @@ def main():
         out = cli("list", "suno1", link, contains=f"Có {len(fake.workspace)} bài")
         check(len(fake.workspace) > 15 and all(s in out for s in fake.workspace), "every page read")
         check(time.monotonic() - started < 120, "stopped at the last page (not round and round)")
+        print("== pages, the last one short (its rows fit: the list box no longer scrolls): every page kept")
+        extra = [fake.add_song(f"Trang cuối ngắn {n}") for n in range((2 - len(fake.workspace)) % 15)]
+        out = cli("list", "suno1", link, contains=f"Có {len(fake.workspace)} bài")
+        check(len(fake.workspace) % 15 == 2 and all(s in out for s in fake.workspace), "every page read")
+        for sid in extra:
+            fake.workspace.remove(sid)
         fake.config["paging"] = "scroll"
 
         print("== the Stop button of Bokin Suno Studio")

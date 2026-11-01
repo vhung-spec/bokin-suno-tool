@@ -22,7 +22,8 @@ LIST_NAME = "danh-sach.csv"
 STEMS = "stems"  # the dinh_dang of a song's Stems & MIDI in the list; its file is the folder that holds them
 UNPACK_MAX = 8_000_000_000  # bytes a stems zip may unpack to
 COLUMNS = ("ten_bai", "file", "trang_thai", "ghi_chu", "dinh_dang", "link", "luc", "id")
-DONE, FAILED, NOT_MINE = "xong", "loi", "nguoi_khac"  # nguoi_khac: someone else's song, never downloaded
+DONE, FAILED, NOT_MINE = "xong", "loi", "nguoi_khac"  # nguoi_khac: someone else's song, not downloaded
+THEIRS = "Bài của tài khoản khác (tải theo ô tick / --others)"  # the note of such a song downloaded as asked
 WINDOWS_RESERVED = {"con", "prn", "aux", "nul"} | {f"{p}{n}" for p in ("com", "lpt") for n in range(1, 10)}
 NAME_MAX = 80
 
@@ -202,6 +203,10 @@ class Folder:
         return next((r.get("ghi_chu", "") for (sid, _), r in self.rows.items()
                      if sid == song_id and r["trang_thai"] == NOT_MINE), None)
 
+    def failed_at(self, song_id, fmt):
+        """When the song last failed in this format ("" if it did not)."""
+        return (self.rows.get((song_id, fmt)) or {}).get("luc", "")
+
     def failed_before(self, song_id, fmt):
         return (self.rows.get((song_id, fmt)) or {}).get("trang_thai") == FAILED
 
@@ -242,10 +247,15 @@ class Folder:
     def part_path(self, song_id, fmt):
         return self.root / f".{song_id}.{fmt}.part"
 
-    def add(self, song, path, fmt, title):
+    def add(self, song, path, fmt, title, note=""):
         for key in [k for k, r in self.rows.items() if k[0] == song.id and r["trang_thai"] == NOT_MINE]:
-            del self.rows[key]  # (written down as someone else's before, wrongly: it is the account's own)
-        self._set(song, fmt, title, DONE, file=Path(path).name)
+            del self.rows[key]  # (written down as someone else's before; downloaded now: its own, or as asked)
+        self._set(song, fmt, title, DONE, file=Path(path).name, note=note)
+
+    def theirs(self, song_id):
+        """Was the song's audio downloaded as another account's (--others)?"""
+        return any(sid == song_id and r["trang_thai"] == DONE and r.get("ghi_chu", "").startswith(THEIRS)
+                   for (sid, _), r in self.rows.items())
 
     def add_failure(self, song, fmt, note):
         self._set(song, fmt, song.title, FAILED, note=note)

@@ -366,10 +366,12 @@ function renderTask(t) {
   const bySong = t.kind === "download" || t.kind === "stems";  // (they stop after the song being done)
   const stopping = bySong ? "Đang dừng sau bài đang tải…" : "Đang dừng…";
   const sum = t.summary;  // a download's result: some songs skipped is not all done
-  const partly = sum && sum.done && ((t.state === "done" && (sum.others || sum.failed)) || t.state === "failed");
+  const got = sum && (sum.done || sum.stems);
+  const early = sum && sum.stopped && t.state !== "running";  // stopped before every song was tried: say why
+  const partly = !early && got && ((t.state === "done" && (sum.others || sum.failed)) || t.state === "failed");
   $("taskState").textContent = t.stopping && t.state === "running" ? stopping
-    : partly ? "Xong một phần" : STATES[t.state] || t.state;
-  $("taskState").className = "state-" + t.state + (partly ? " state-partly" : "");
+    : early ? STATES.stopped : partly ? "Xong một phần" : STATES[t.state] || t.state;
+  $("taskState").className = "state-" + t.state + (partly || early ? " state-partly" : "");
   $("stop").hidden = t.state !== "running";
   const atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 8;
   if (t.lines.length) {
@@ -399,7 +401,10 @@ function renderTask(t) {
   }
 }
 function summaryText(sum) {
-  const parts = [`Đã tải ${sum.done} bài`];
+  const parts = [];
+  if (sum.stopped) parts.push(/^Đã dừng/.test(sum.stopped) ? sum.stopped : `Đã dừng: ${sum.stopped}`);
+  parts.push(`Đã tải ${sum.done} bài`);
+  if (sum.stems != null) parts.push(`Stems & MIDI của ${sum.stems} bài`);
   if (sum.failed) parts.push(`${sum.failed} bài lỗi (lần tải sau app thử lại)`);
   if (sum.others) parts.push(`${sum.others} bài của tài khoản khác bỏ qua (muốn tải: tick ô "Tải cả bài của tài khoản khác")`);
   return parts.join(" · ");

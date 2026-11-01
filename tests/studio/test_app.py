@@ -164,9 +164,11 @@ def test_download_result(tmp_path):
     assert task.to_dict()["summary"] is None and (task.done, task.total) == (8, 8)
     tasks._line(task, "12:00:10  Tổng: 4 bài tải xong, 1 bài lỗi, 3 bài của người khác (bỏ qua) (240.0 MB trong "
                       "2 phút). Danh sách: D:\\Nhac\\danh-sach.csv")
-    assert task.to_dict()["summary"] == {"done": 4, "failed": 1, "others": 3}
-    tasks._line(task, "12:00:11  Tổng: 2 bài tải xong, 0 bài lỗi (1 MB trong 1 phút). Danh sách: x")
-    assert task.summary == {"done": 2, "failed": 0, "others": 0}
+    assert task.to_dict()["summary"] == {"done": 4, "failed": 1, "others": 3, "stems": None, "stopped": ""}
+    tasks._line(task, "12:00:11  Đã dừng: Hộp Download của Suno ghi Downloads 0: hết lượt tải của gói")
+    tasks._line(task, "12:00:11  Tổng: 2 bài tải xong, 0 bài lỗi, stems của 7 bài (1 MB trong 1 phút). Danh sách: x")
+    assert task.summary == {"done": 2, "failed": 0, "others": 0, "stems": 7,
+                            "stopped": "Hộp Download của Suno ghi Downloads 0: hết lượt tải của gói"}
 
 
 def test_log_lines_dropped_are_said(tmp_path, monkeypatch):
@@ -197,11 +199,15 @@ def test_songs_not_downloaded_are_listed(client, tmp_path):
         w.writerow(["BNCup1", "", "nguoi_khac", "Bài của tài khoản khác", "wav", "", "2026-11-01 10:01:00", "b"])
         w.writerow(["Chưa xong", "", "loi", "Suno chưa cho tải", "wav", "", "2026-11-01 10:02:00", "c"])
         w.writerow(["Stems", "", "loi", "hết credit", "stems", "", "2026-11-01 10:03:00", "a"])
+        w.writerow(["MP3 có, WAV lỗi", "MP3 có.mp3", "xong", "", "mp3", "", "2026-11-01 08:00:00", "d"])
+        w.writerow(["MP3 có, WAV lỗi", "", "loi", "không có dòng WAV", "wav", "", "2026-11-01 10:04:00", "d"])
+        w.writerow(["Đã tải MP3", "", "nguoi_khac", "Bài của tài khoản khác", "wav", "", "2026-11-01 10:05:00", "d"])
     (folder / "BNCup.wav").write_bytes(b"RIFF")
     r = client.get("/api/library", headers=H, params={"folder": str(folder)}).json()
     assert [s["title"] for s in r["songs"]] == ["BNCup"]
     assert [(p["title"], p["state"], p["note"]) for p in r["pending"]] == [
-        ("Chưa xong", "loi", "Suno chưa cho tải"), ("BNCup1", "nguoi_khac", "Bài của tài khoản khác")]
+        ("MP3 có, WAV lỗi", "loi", "không có dòng WAV"), ("Chưa xong", "loi", "Suno chưa cho tải"),
+        ("BNCup1", "nguoi_khac", "Bài của tài khoản khác")]
 
 
 def test_stop_login(client, monkeypatch):

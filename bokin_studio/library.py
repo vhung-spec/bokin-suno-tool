@@ -43,17 +43,21 @@ def _title(rec):
 
 def pending(folder) -> list:
     """The songs of the folder's list not downloaded: failed ("loi", tried again on the next download) or another
-    account's ("nguoi_khac"), with the reason written down; a song downloaded since is not one of them."""
+    account's ("nguoi_khac"), with the reason written down; a song downloaded since (in that format; for another
+    account's, in any) is not one of them."""
     folder = Path(folder)
     if not folder.is_dir():
         return []
     recs = _records(folder)
-    done = {r.get("id") for r in recs if (r.get("trang_thai") or "").strip().lower() == "xong"}
+    done = {(r.get("id"), r.get("dinh_dang", "").strip().lower()) for r in recs
+            if (r.get("trang_thai") or "").strip().lower() == "xong"}
+    done_any = {sid for sid, _ in done}
     found = []
     for rec in recs:
         state = (rec.get("trang_thai") or "").strip().lower()
-        if state not in ("loi", "nguoi_khac") or rec.get("id") in done or \
-                rec.get("dinh_dang", "").strip().lower() == STEMS:
+        fmt = rec.get("dinh_dang", "").strip().lower()
+        if state not in ("loi", "nguoi_khac") or fmt == STEMS or (rec.get("id"), fmt) in done or \
+                (state == "nguoi_khac" and rec.get("id") in done_any):
             continue
         found.append({"title": _title(rec) or rec.get("id", ""), "state": state, "note": rec.get("ghi_chu", ""),
                       "link": rec.get("link", ""), "at": rec.get("luc", "")})

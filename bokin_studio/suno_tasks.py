@@ -26,7 +26,9 @@ PROGRESS = re.compile(r"^\d\d:\d\d:\d\d  \[(\d+)/(\d+)\] ")  # "12:00:00  [3/20]
 STEMS_START = re.compile(r"^\d\d:\d\d:\d\d  Stems & MIDI \(.*\): (\d+) bài cần tải")  # then [n/N] count the stems
 LISTED = re.compile(r"^(\d+)\t(.*)\t(https?://\S+)$")
 # a download's last line: "Tổng: 4 bài tải xong, 1 bài lỗi, 3 bài của người khác (bỏ qua) (...)"
-TOTAL = re.compile(r"^\d\d:\d\d:\d\d  Tổng: (\d+) bài tải xong, (\d+) bài lỗi(?:, (\d+) bài của người khác)?")
+TOTAL = re.compile(r"^\d\d:\d\d:\d\d  Tổng: (\d+) bài tải xong, (\d+) bài lỗi(?:, (\d+) bài của người khác \(bỏ qua\))?"
+                   r"(?:, stems của (\d+) bài)?")
+STOPPED = re.compile(r"^\d\d:\d\d:\d\d  Đã dừng: (.+)$")  # a download stopped early, and why
 KEEP_LINES = 2000
 STOP_GRACE = 15 * 60  # seconds a download has to stop by itself (one song: up to 2 x 5 minutes) before it is ended
 # a task with stems: they stop while Suno makes them too, and once their files' Download is pressed they have up to
@@ -78,7 +80,8 @@ class Task:
         self.songs = []  # the songs a "list" printed: {"n", "title", "link"}
         self.done = self.total = 0
         self.phase = ""  # "stems" once a download's Stems & MIDI (or a stems task) has started
-        self.summary = None  # a download's result: {"done", "failed", "others"}
+        self.summary = None  # a download's result: {"done", "failed", "others", "stems", "stopped"}
+        self.stopped = ""  # why a download stopped before its songs were all tried
         self.started, self.ended = time.time(), None
         self.stopping = False
         self.proc = None
@@ -180,9 +183,13 @@ class SunoTasks:
         m = STEMS_START.search(line)
         if m:
             task.phase, task.done, task.total = "stems", 0, int(m.group(1))
+        m = STOPPED.search(line)
+        if m:
+            task.stopped = m.group(1)
         m = TOTAL.search(line)
         if m:
-            task.summary = {"done": int(m.group(1)), "failed": int(m.group(2)), "others": int(m.group(3) or 0)}
+            task.summary = {"done": int(m.group(1)), "failed": int(m.group(2)), "others": int(m.group(3) or 0),
+                            "stems": int(m.group(4)) if m.group(4) else None, "stopped": task.stopped}
         with task.lines_lock:
             task.lines.append(line)
             if len(task.lines) > KEEP_LINES:
