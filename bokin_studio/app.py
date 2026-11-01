@@ -443,6 +443,8 @@ def create_app(token: str, port: int = paths.PORTS[0], extra_hosts: tuple = (), 
         if body.get("stems"):  # WAV, MP3 and MIDI, Follow tempo changes; Extract when not made yet (the owner's choice)
             args.append("--stems")
             label = f"Tải nhạc ({fmt.upper()}) và Stems & MIDI"
+        if body.get("others"):  # songs of other accounts at the link: each one uses a download of the plan
+            args.append("--others")
         return run("download", args, label, body)
 
     @app.post("/api/suno/stems")

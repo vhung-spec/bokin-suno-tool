@@ -85,7 +85,10 @@ class FakeSuno:
                        # stems zip; the kinds ticked at first in the files box (Suno remembering the last choice), its
                        # squares drawn as an svg (a check added when ticked); "Not enough credits" as a notice (toast)
                        "stems_load_ms": 0, "extract_silent": False, "confirm_close_ms": 0, "stems_drop": "",
-                       "files_start": "mp3,wav,midi", "files_square": False, "credits_ui": "box"}
+                       "files_start": "mp3,wav,midi", "files_square": False, "credits_ui": "box",
+                       # the account's own songs show a Follow button by their title too (the owner's playlist songs,
+                       # 31/10/2026: a featured or original artist's): only the ⋯ menu tells whose song it is
+                       "follow_on_own": False}
         self.sessions = set()
         self.signins = 0
         self.songs = {}
@@ -234,12 +237,16 @@ class FakeSuno:
                     similar = "".join(
                         f'<div class="row"><a href="/song/{s}">{html.escape(fake.songs[s]["title"])}</a>'
                         f'<button aria-label="More options">...</button></div>' for s in fake.similar)
-                    artist = ("Bokin" if song["owner"] == "me" else "Dr. Someone Else") + (
-                        "" if song["owner"] == "me" else ' <button class="follow">Follow</button>')
+                    mine = song["owner"] == "me"
+                    artist = ("Bokin" if mine else "Dr. Someone Else") + (
+                        ' · cover of <a href="/@someone">Someone</a> <button class="follow">Follow</button>'
+                        if mine and fake.config["follow_on_own"] else
+                        "" if mine else ' <button class="follow">Follow</button>')
                     body = (SONG_BODY.replace("__TITLE__", html.escape(song["title"]))
                             .replace("__ARTIST__", artist).replace("__SIMILAR__", similar)
                             .replace("__MORE__", html.escape(fake.config["more_label"]))
                             .replace("__DISABLED__", "" if song["status"] == "complete" else 'aria-disabled="true"')
+                            .replace("__OWN__", "" if mine else "hidden")
                             .replace("__STRAY__", fake.stray)
                             .replace("__LYRICS__", LYRICS_BODY.replace("__TEXT__", html.escape(song["lyrics"]))
                                      if song["lyrics"] else ""))
@@ -404,7 +411,7 @@ SONG_BODY = """
 <div role="menu" id="menu" hidden>
   <div role="menuitem">Remix</div>
   <div role="menuitem">Edit</div>
-  <div role="menuitem">Publish</div>
+  <div role="menuitem" __OWN__>Publish</div>
   <div role="menuitem">Share</div>
   <div role="menuitem" id="dl" __DISABLED__>Download</div>
   <div role="menuitem">Manage</div>
@@ -412,7 +419,7 @@ SONG_BODY = """
   <div role="menuitem">Add to Playlist</div>
   <div role="menuitem">Song Radio</div>
   <div role="menuitem">Report</div>
-  <div role="menuitem" data-never="trash">Move to Trash</div>
+  <div role="menuitem" data-never="trash" __OWN__>Move to Trash</div>
 </div>
 <div role="menu" id="sub" hidden style="margin-left: 160px">
   <div role="menuitem" data-fmt="mp3">MP3 Audio</div>

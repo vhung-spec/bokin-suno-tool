@@ -89,8 +89,10 @@ Trên Linux (VPS), lệnh `login` phải chạy trong **Remote Desktop**, xem *C
 3. Thử dán link đó vào một tab mới: phải mở ra **đúng workspace** với đúng các bài. Nếu không, tool cũng không thấy.
 
 Dùng link một **playlist** hoặc link **một bài** cũng được. Link chia sẻ (`suno.com/s/...`) là link của một bài:
-tool chỉ tải đúng bài đó. Bài của **người khác** (trang bài có nút Follow) tool luôn bỏ qua, không bấm tải, và ghi
-`nguoi_khac` vào `danh-sach.csv`.
+tool chỉ tải đúng bài đó. Bài của **tài khoản khác** (menu ⋯ của bài không có Publish / Move to Trash, cạnh tên bài
+có nút Follow) tool bỏ qua, không bấm tải, và ghi `nguoi_khac` vào `danh-sach.csv`; lần chạy sau tool xem lại các bài
+đó. Muốn tải cả bài của tài khoản khác có trong playlist: thêm `--others` (mỗi bài tốn một lượt tải của gói như tải
+tay).
 
 ## Bước 3: xem trước, rồi tải
 

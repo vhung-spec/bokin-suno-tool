@@ -157,7 +157,7 @@ iframe { flex: 1; width: 100%; border: 0; background: var(--bg); }
       <textarea id="links" placeholder="https://suno.com/create?wid=..." spellcheck="false"></textarea>
       <span class="hint" style="display:block;margin-top:4px">Tải cả workspace: mở workspace trên suno.com, chép link
         trên <b>thanh địa chỉ</b> (dạng suno.com/create?wid=...). Link chia sẻ (suno.com/s/...) là link của
-        <b>một bài</b>: app chỉ tải đúng bài đó. Bài của người khác app luôn bỏ qua.</span></label>
+        <b>một bài</b>: app chỉ tải đúng bài đó. Bài của tài khoản khác app bỏ qua, trừ khi tick ô bên dưới.</span></label>
     <label>Thư mục lưu nhạc
       <span class="row" style="margin-top:4px"><input id="folder" class="grow" spellcheck="false">
       <button class="secondary small" id="pickFolder" hidden>Chọn…</button>
@@ -167,6 +167,10 @@ iframe { flex: 1; width: 100%; border: 0; background: var(--bg); }
       (WAV, MP3, MIDI) của mỗi bài</label>
     <p class="hint" style="margin:2px 0 0 22px">Bài chưa tách stems trên Suno thì app bấm <b>Extract</b> (Auto split):
       có thể tốn credit Suno. Hết credit thì app dừng, không mua thêm.</p>
+    <label class="check" style="margin-top:6px"><input type="checkbox" id="others"> Tải cả <b>bài của tài khoản
+      khác</b> có trong link (playlist)</label>
+    <p class="hint" style="margin:2px 0 0 22px">Mỗi bài như vậy tốn một lượt tải của gói (như tải tay). Không tick thì
+      app bỏ qua bài của tài khoản khác. Bài của chính tài khoản đang dùng luôn được tải.</p>
     <div class="row" style="margin-top:12px">
       <button class="secondary" id="listSongs">Xem danh sách bài</button>
       <button class="primary" id="download">Tải về</button>
@@ -416,7 +420,8 @@ async function poll() {
 
 function downloadBody() {
   return { account: $("account").value, links: $("links").value, folder: $("folder").value.trim(),
-    format: $("format").value, limit: $("limit").value || null, full: $("full").checked, stems: $("stems").checked };
+    format: $("format").value, limit: $("limit").value || null, full: $("full").checked, stems: $("stems").checked,
+    others: $("others").checked };
 }
 async function saveSettings() {
   try { settings = await api("/api/settings", { json: { account: $("account").value, links: $("links").value,

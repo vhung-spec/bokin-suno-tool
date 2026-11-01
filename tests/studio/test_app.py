@@ -339,6 +339,16 @@ def test_download_with_stems(client, tmp_path):
     assert args[-1] == "--stems" and args[0] == "download"
 
 
+def test_download_songs_of_other_accounts_only_when_ticked(client, tmp_path):
+    folder = tmp_path / "Nhac"
+    body = {"account": "suno1", "links": "https://suno.com/playlist/1", "folder": str(folder)}
+    for others in (False, True):
+        client.post("/api/suno/download", headers=H, json={**body, "others": others})
+        wait_task(client)
+        args = (tmp_path / "suno" / "args.txt").read_text(encoding="utf-8").split("\n")
+        assert ("--others" in args) is others
+
+
 def test_stems_of_one_song(client, tmp_path):
     folder = tmp_path / "Nhac"
     make_folder(folder)

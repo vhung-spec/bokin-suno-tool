@@ -55,7 +55,10 @@
 - Trang Create (`suno.com/create`, có thể có `?wid=`): danh sách bài là khung cuộn (`clip-browser-list-scroller`)
   chia trang bằng nút Previous page / Next page; **Next page vẫn bật ở trang cuối** và bấm không đổi gì: tool dừng
   khi bấm Next page mà danh sách không đổi.
-- Bài của người khác có nút Follow cạnh tên tác giả: bỏ qua. Link
+- Bài của tài khoản khác: bỏ qua (`not_mine`, ghi `nguoi_khac`, lần chạy sau xem lại), trừ khi `--others` (ô tick
+  "Tải cả bài của tài khoản khác" trong Studio, chủ chọn 01/11/2026). Nhận ra theo menu ⋯ đang mở: có Publish / Move
+  to Trash (`text_owner_item`) là bài của mình; chỉ khi không có mà cạnh tên bài có nút Follow mới là bài người khác
+  (playlist của chủ 01/11/2026: bài của chính chủ cũng có nút Follow cạnh tên, Suno giả lập `follow_on_own`). Link
   chia sẻ `suno.com/s/...` dẫn tới một bài; trang bài có cột Similar (bài người khác): không bao giờ đọc làm danh
   sách. Suno giả lập có cả hai giao diện (`download_ui` "box"/"menu"), hộp chọn nhiều dòng như thật, và
   `paging` "pages" như trang Create.

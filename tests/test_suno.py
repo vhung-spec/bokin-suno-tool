@@ -252,13 +252,30 @@ def main():
         check(len(fake.picked) == picked and len(fake.counted) == counted, "nothing pressed, no download used")
         row = [r for r in read_list(nhac) if r["id"] == theirs]
         check(row and row[0]["trang_thai"] == "nguoi_khac", "listed as someone else's song")
-        cli("download", "suno1", link, "--out", str(nhac), contains="0 bài cần tải")
-        check(len(fake.picked) == picked, "not tried again")
+        cli("download", "suno1", link, "--out", str(nhac), contains="1 bài lần trước ghi là của người khác: xem lại")
+        check(len(fake.picked) == picked and len(fake.counted) == counted, "looked at again, still nothing pressed")
         code = fake.add_share(fake.similar[0])
         cli("download", "suno1", f"{fake.url}/s/{code}", "--out", str(tmp / "chia-se"),
             contains="1 bài của người khác (bỏ qua)")
         check(fake.similar[0] not in fake.counted, "a share link to someone else's song: nothing downloaded")
+        print("== the account's own song with a Follow button by its title (the owner's playlist, 31/10/2026): its "
+              "⋯ menu (Publish, Move to Trash) tells it is the account's own")
+        fake.config["follow_on_own"] = True
+        own = fake.add_song("Của mình có Follow")
+        cli("download", "suno1", link, "--out", str(nhac), contains="1 bài tải xong")
+        check(own in fake.counted, "downloaded")
+        print("== a song written down as someone else's by mistake: downloaded on the next run, the row corrected")
+        fake.songs[theirs]["owner"] = "me"  # (as the owner's songs the app took for someone else's)
+        cli("download", "suno1", link, "--out", str(nhac), contains="1 bài tải xong")
+        rows = [r for r in read_list(nhac) if r["id"] == theirs]
+        check(theirs in fake.counted and [r["trang_thai"] for r in rows] == ["xong"], f"downloaded, {rows}")
+        fake.config["follow_on_own"] = False
+        print("== --others: someone else's song at the link downloaded on request")
+        cli("download", "suno1", f"{fake.url}/s/{code}", "--out", str(tmp / "chia-se"), "--others",
+            contains="1 bài tải xong")
+        check(fake.similar[0] in fake.counted, "someone else's song downloaded with --others")
         fake.workspace.remove(theirs)
+        fake.workspace.remove(own)
 
         print("== Stems & MIDI of a song whose stems are made already: no Extract, one zip unpacked in its folder")
         check(fake.stems_opened == [], "Stems & MIDI → Manage never opened by a plain download")

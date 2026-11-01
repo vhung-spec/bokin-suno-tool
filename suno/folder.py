@@ -238,6 +238,8 @@ class Folder:
         return self.root / f".{song_id}.{fmt}.part"
 
     def add(self, song, path, fmt, title):
+        for key in [k for k, r in self.rows.items() if k[0] == song.id and r["trang_thai"] == NOT_MINE]:
+            del self.rows[key]  # (written down as someone else's before, wrongly: it is the account's own)
         self._set(song, fmt, title, DONE, file=Path(path).name)
 
     def add_failure(self, song, fmt, note):

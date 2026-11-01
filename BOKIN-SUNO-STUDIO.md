@@ -77,8 +77,11 @@ Key của Bokin Suno Master không mở được Bokin Suno Studio (và ngược
 1. Trên Chrome thường của bạn, mở **workspace** muốn tải, chép link trên **thanh địa chỉ** (dạng
    `https://suno.com/create?wid=...`). Link một **playlist** hoặc **một bài** cũng được.
    - Link chia sẻ (`suno.com/s/...`, nút Share của Suno) là link của **một bài**: app chỉ tải đúng bài đó.
-   - Bài của **người khác** (trang bài có nút **Follow** cạnh tên tác giả) app luôn **bỏ qua, không bấm tải**, nên
-     không tốn lượt tải. Trong `danh-sach.csv` bài đó ghi `nguoi_khac`.
+   - Bài của **tài khoản khác** (menu ⋯ của bài không có Publish / Move to Trash, cạnh tên bài có nút **Follow**)
+     app **bỏ qua, không bấm tải**, nên không tốn lượt tải. Trong `danh-sach.csv` bài đó ghi `nguoi_khac`; lần tải
+     sau app xem lại. Bài của chính tài khoản đang dùng luôn được tải, kể cả khi trang bài có nút Follow.
+   - Muốn tải cả bài của tài khoản khác có trong playlist: tick ô **Tải cả bài của tài khoản khác** (mỗi bài tốn
+     một lượt tải của gói, như tải tay).
 2. Mở thẻ **2. Tải nhạc**:
    1. Chọn **Tài khoản Suno**.
    2. Dán link vào ô **Link** (nhiều workspace: mỗi link một dòng).

@@ -64,9 +64,13 @@ SEL = {
     # "PremierDownloads0Refreshes")
     "text_none_left": re.compile(r"downloads\s*:?\s*0(?![\d.,/])", re.I),
     "text_buy": re.compile(r"\b(buy|purchase|upgrade|subscribe|payment|checkout)\b|[$€£₫]\s?\d", re.I),
-    # a song page with a Follow button is someone else's song (suno.com shows none on the account's own songs):
-    # never downloaded, it would use up one of the plan's downloads for nothing
+    # a Follow button by the title, with a ⋯ menu without the owner's items (text_owner_item), is someone else's song:
+    # not downloaded unless asked (--others), it uses up one of the plan's downloads
     "text_follow": re.compile(r"^(follow|following|unfollow)$", re.I),
+    # the ⋯ menu items only a song's own account is shown (suno.com, 30/10/2026: Publish, Move to Trash): such a menu
+    # is the account's own song, whatever Follow buttons the page shows (the owner's playlist songs, 31/10/2026, had
+    # one near their title and were skipped as someone else's)
+    "text_owner_item": re.compile(r"^(move to trash|delete|publish|unpublish|make (public|private))$", re.I),
     # Stems & MIDI (download_stems)
     # (the box's words may run together: "Stems & MIDIManage")
     "text_stems_row": re.compile(r"stems\s*(&|and)\s*midi", re.I),
@@ -638,16 +642,23 @@ def _pick_format(page, fmt):
     raise SunoError("stuck", f"Không chọn được riêng dòng {fmt.upper()} trong hộp Download của Suno")
 
 
-def _open_format_item(page, fmt):
+def _menu_says_mine(page):
+    """Does the open ⋯ menu offer what only the song's own account is offered (Publish, Move to Trash)?"""
+    for item in page.locator(SEL["menu_item"]).all():
+        if _visible(item) and SEL["text_owner_item"].search(_text(item)):
+            return True
+    return False
+
+
+def _open_format_item(page, fmt, others=False):
     """More options → Download → WAV/MP3 (the format's row in the download box, or in the older menu); returns it,
-    ready to click."""
+    ready to click. Someone else's song (its menu without Publish / Move to Trash, a Follow button by its title) is
+    not_mine, unless others: nothing is pressed."""
     more = page.locator(SEL["more"]).first
     try:
         more.wait_for(state="visible", timeout=15_000)
     except Exception:
         raise SunoError("stuck", "Không thấy nút More options (⋯) ở trang bài hát")
-    if _someone_elses(page):
-        raise SunoError("not_mine", "Bài của người khác (cạnh tên bài có nút Follow): bỏ qua, không bấm tải")
     want = SEL["text_format"][fmt]
 
     def format_item():
@@ -666,6 +677,12 @@ def _open_format_item(page, fmt):
     for _ in range(3):  # a click before the page is ready does nothing: open the menu again
         more.click()
         kind, loc = _poll(page, menu, 3000) or (None, None)
+        if kind and not others and not _menu_says_mine(page) and _someone_elses(page):
+            page.keyboard.press("Escape")
+            raise SunoError("not_mine", "Bài của tài khoản khác (menu ⋯ không có Publish / Move to Trash, cạnh tên "
+                                        "bài có nút Follow): bỏ qua, không bấm tải. Muốn tải: tick ô \"Tải cả bài "
+                                        "của tài khoản khác\" (dòng lệnh: --others), mỗi bài tốn một lượt tải "
+                                        "của gói")
         if kind == "item":
             return loc
         if kind == "download":
@@ -708,13 +725,13 @@ def _answer_dialog(page, clicked, title=""):
                 return
 
 
-def download_song(page, catcher, song, fmt, dest, log, timeout_seconds=300):
+def download_song(page, catcher, song, fmt, dest, log, timeout_seconds=300, others=False):
     """Downloads one song through its page's Download button into `dest`. Returns (the title the page shows, the
     lyrics it shows or "")."""
     page.goto(song.link, wait_until="domcontentloaded", timeout=90_000)
     catcher.reset()
     try:
-        item = _open_format_item(page, fmt)
+        item = _open_format_item(page, fmt, others)
     except SunoError as e:
         if e.code == "not_mine" and not song.title:
             song.title = _song_title(page)  # (for danh-sach.csv)

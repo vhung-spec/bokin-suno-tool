@@ -361,14 +361,14 @@ def check_space(root, count, fmt):
                     human_size(free), count, human_size(count * SIZE_GUESS[fmt]))
 
 
-def download_one(page, catcher, song, fmt, out, label):
+def download_one(page, catcher, song, fmt, out, label, others=False):
     """One song into the folder, its lyrics (if its page shows them) next to it in Title.txt; a second try after a
     failure Suno's page may not repeat. Returns the file's path."""
     part = out.part_path(song.id, fmt)
     try:
         for attempt in (1, 2):
             try:
-                title, lyrics = web.download_song(page, catcher, song, fmt, part, log)
+                title, lyrics = web.download_song(page, catcher, song, fmt, part, log, others=others)
                 if not folder.audio_ok(part, fmt):
                     raise web.SunoError("stuck", f"File nhận được không phải {fmt.upper()}")
                 break
@@ -599,9 +599,14 @@ def cmd_download(args, data):
                                   lambda sid: (out.done(sid, fmt) and (not args.stems or out.stems_ok(sid)))
                                   or out.not_mine(sid),
                                   None if args.full or args.stems else KNOWN_IN_A_ROW)
-        todo = [s for s in songs if not out.done(s.id, fmt) and not out.not_mine(s.id)]
+        # (a song written down as someone else's is looked at again: the page decides, nothing pressed if so)
+        todo = [s for s in songs if not out.done(s.id, fmt)]
         log.info("Đọc được %d bài: %d bài đã tải từ trước, %d bài cần tải %s vào %s", len(songs),
                  len(songs) - len(todo), len(todo), fmt.upper(), out.root)
+        recheck = sum(1 for s in todo if out.not_mine(s.id))
+        if recheck:
+            log.info("%d bài lần trước ghi là của người khác: xem lại%s", recheck,
+                     " (tải cả bài của người khác)" if args.others else "")
         listed = {s.id for s in songs}
         again = [web.Song(sid, title) for sid, title in out.failed(fmt) if sid not in listed]
         retried = {s.id for s in again}
@@ -621,7 +626,7 @@ def cmd_download(args, data):
                 break
             label = f"[{n}/{len(todo)}] {song.title or song.id}"
             try:
-                path = download_one(page, catcher, song, fmt, out, label)
+                path = download_one(page, catcher, song, fmt, out, label, args.others)
             except Exception as e:
                 log.debug("download failed", exc_info=True)
                 note = describe(e)
@@ -638,7 +643,7 @@ def cmd_download(args, data):
                     others += 1
                     stuck = 0
                     with contextlib.suppress(folder.FolderError):
-                        out.add_not_mine(song, fmt, note)  # never tried again
+                        out.add_not_mine(song, fmt, note)  # (looked at again on the next run)
                     continue
                 log.error("%s: %s", label, note)
                 failed += 1
@@ -985,6 +990,8 @@ def main(argv=None):
     stems_options(s, "--stems")
     s.add_argument("--full", action="store_true", help="đọc hết danh sách workspace (mặc định dừng khi gặp "
                    f"{KNOWN_IN_A_ROW} bài liền đã tải)")
+    s.add_argument("--others", action="store_true", help="tải cả bài của tài khoản khác có trong link (playlist): "
+                   "mỗi bài tốn một lượt tải của gói như tải tay")
     s = sub.add_parser("stems", help="tải Stems & MIDI của các bài ở link (bấm Extract nếu chưa tách)")
     s.add_argument("tai_khoan")
     s.add_argument("links", nargs="+", metavar="link", help="một hoặc nhiều link bài / workspace / playlist")
