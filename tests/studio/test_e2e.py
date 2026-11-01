@@ -181,7 +181,8 @@ def test_every_button(studio):
 
         page.fill("#links", link)
         page.fill("#limit", "4")
-        assert "state-done" in run_task(page, "#download")
+        state = run_task(page, "#download")
+        assert "state-done" in state, page.locator("#taskLog").inner_text()
         log = page.locator("#taskLog").inner_text()
         assert "3 bài tải xong" in log and "1 bài của người khác (bỏ qua)" in log, log
         # the result said plainly: some songs skipped is not all done; the skipped song listed with its reason

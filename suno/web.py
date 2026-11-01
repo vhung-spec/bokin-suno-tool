@@ -475,8 +475,8 @@ HOLD_SECONDS = 8  # rows in sight without their songs yet: the list stays where 
 
 class _Net:
     """When the page last asked for or received anything, and what it still waits for (a request open for more than
-    STALE seconds, the player's stream or a long poll, is not waited for)."""
-    STALE = 10
+    STALE seconds, the player's stream or a long poll, is not waited for; a slow page answer is)."""
+    STALE = 30
 
     def __init__(self, page):
         self.page, self.open, self.at = page, {}, time.monotonic()
@@ -589,8 +589,11 @@ def _read_list(page, log, net, known, known_in_a_row, limit_minutes):
         if len(songs) >= last_logged + 50:
             last_logged = len(songs) - len(songs) % 50
             log.info("Đã đọc %d bài...", len(songs))
-        if new or r["height"] != last_height or not r["bottom"]:
+        if new or r["height"] != last_height:
             stalled, nudged, last_height = None, False, r["height"]
+        elif not r["bottom"]:
+            if not nudged:  # (scrolled up a little on purpose: still at the end, waiting)
+                stalled = None
         elif stalled is None:
             stalled = time.monotonic()
         elif not nudged and time.monotonic() - stalled >= 1:
@@ -631,7 +634,8 @@ def _read_list(page, log, net, known, known_in_a_row, limit_minutes):
                 break
             page.evaluate(JS_SCROLL, "top")
             stalled, nudged, sweeps, swept_new, last_height = None, False, 0, 0, -1
-        page.wait_for_timeout(350 if new and not r["bottom"] else 700)  # quicker while songs keep coming
+        # quicker while songs keep coming, or while reading the list again
+        page.wait_for_timeout(350 if (new or sweeps) and not r["bottom"] else 700)
     else:
         log.warning("Đọc danh sách quá %d phút, dừng ở %d bài", limit_minutes, len(songs))
     if not songs:
@@ -817,6 +821,7 @@ def _pick_format(page, fmt):
 # Seconds Suno's download box has to open once Download is clicked (a slow page took more than 5: the menu was opened
 # again under the box, "TimeoutError: Timeout 30000ms exceeded", the owner's playlist, 01/11/2026)
 BOX_WAIT_MS = 20_000
+MENU_TRIES = 6  # ⋯ clicked again while its menu does not open (a slow song page: half a minute)
 _seen = {"box": False}  # this run's songs opened the download box (no submenu to wait for)
 
 
@@ -852,7 +857,7 @@ def _open_format_item(page, fmt, others=False):
         down = _find_text(page, SEL["menu_item"], SEL["text_download"])
         return ("download", down) if down else None
 
-    for attempt in range(3):  # a click before the page is ready does nothing: open the menu again
+    for attempt in range(MENU_TRIES):  # a click before the page is ready does nothing: open the menu again
         if attempt:  # the download box opened after the last pass gave up on it: it is used, not covered over
             item = format_anywhere()
             if item:
@@ -887,7 +892,7 @@ def _open_format_item(page, fmt, others=False):
     raise SunoError("stuck", f"Không thấy mục Download → {fmt.upper()} trong menu của bài hát")
 
 
-def _download_box(box, go):
+def _is_download_box(box, go):
     """Is this dialog Suno's download box (its Download button, its format rows, "Download 'title'")?"""
     return bool(go) or any(SEL["text_dialog_row"].search(_text(r))
                            for r in box.locator(SEL["dialog_option"]).all() if _visible(r))
@@ -897,8 +902,8 @@ OTHER_BOX_SECONDS = 15  # another box offering to buy (a promotion) stops the ru
 
 
 def _answer_dialog(page, clicked, titles=()):
-    """Suno's download box: presses its Download button once it is ready (once each: again only after a minute with
-    no file). Never presses anything in a box that offers to buy or upgrade; such a box, or one saying the downloads
+    """Suno's download box: presses its Download button once it is ready (once: again only after a minute with no
+    file). Never presses anything in a box that offers to buy or upgrade; such a box, or one saying the downloads
     are used up, stops the run. (The box's text is read without the song's title, as the list showed it and as its
     page does: "Download 'Buy Me Love'" offers nothing.) Another box (not the download box) offering to buy stops the
     run only when it stays."""
@@ -912,10 +917,12 @@ def _answer_dialog(page, clicked, titles=()):
             text = _without(text, title)
         go = []
         for b in box.locator(SEL["dialog_button"]).all():
+            if not _visible(b):  # (gone: the box closed meanwhile; reading it would wait)
+                continue
             label = _label(b)
             if SEL["text_go"].search(label):
                 go.append((label, b))
-        if not _download_box(box, go):
+        if not _is_download_box(box, go):
             if SEL["text_buy"].search(text) or SEL["text_none_left"].search(text):
                 since = clicked.setdefault("(other box)", time.monotonic())
                 if time.monotonic() - since >= OTHER_BOX_SECONDS:
@@ -926,9 +933,12 @@ def _answer_dialog(page, clicked, titles=()):
                                      "ghi trong hộp). Tool dừng, không bấm gì")
         if SEL["text_buy"].search(text) or (SEL["text_limit"].search(text) and not go):
             raise SunoError("limit", f"Suno báo hết lượt tải của gói: \"{text[:160]}\". Tool dừng, không mua thêm")
-        for label, b in go:
-            if _enabled(b) and time.monotonic() - clicked.get(label, -1e9) > 60 and _press(b):
-                clicked[label] = time.monotonic()
+        # one press for the song: the button may then read "Download" while the file is made, a second file
+        if time.monotonic() - clicked.get("(pressed)", -1e9) <= 60:
+            return
+        for _, b in go:
+            if _enabled(b) and _press(b):
+                clicked["(pressed)"] = time.monotonic()
                 return
 
 

@@ -265,7 +265,8 @@ def main():
         row = [r for r in read_list(nhac) if r["id"] == theirs]
         check(row and row[0]["trang_thai"] == "nguoi_khac", "listed as someone else's song")
         check("menu ⋯" in row[0]["ghi_chu"] and "[tài khoản suno1]" in row[0]["ghi_chu"], row[0]["ghi_chu"])
-        out = cli("download", "suno1", link, "--out", str(nhac), contains="1 bài của tài khoản khác (đã xem ở lần trước)")
+        out = cli("download", "suno1", link, "--out", str(nhac),
+                  contains="1 bài của tài khoản khác (đã xem ở lần trước)")
         check(len(fake.picked) == picked and len(fake.counted) == counted and "Tổng: 0 bài tải xong, 0 bài lỗi, 1 bài "
               "của người khác" in out, "not opened again, still counted as skipped")
         code = fake.add_share(fake.similar[0])

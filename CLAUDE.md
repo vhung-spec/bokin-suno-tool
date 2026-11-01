@@ -63,8 +63,8 @@
   sau cùng và không tính vào `STUCK_IN_A_ROW`.
 - Mọi lần đọc phần tử / bấm trong lúc tải một bài có hạn ngắn (`READ_MS`, `_press`), không đợi 30 giây mặc định của
   Playwright: lỗi `TimeoutError: Timeout 30000ms` của chủ (01/11/2026) là hộp Download mở chậm hơn 5 giây rồi bị
-  bấm ⋯ đè lên; nay chờ hộp `BOX_WAIT_MS` và dùng hộp đã mở. Tab mở file .wav của bài trước không bao giờ bị lấy cho
-  bài sau (`Catcher.reset`). Nút Download của hộp bấm một lần (lại sau 60 giây). Hộp khác (không phải hộp Download)
+  bấm ⋯ đè lên; nay chờ hộp `BOX_WAIT_MS` và dùng hộp đã mở; ⋯ bấm lại tới `MENU_TRIES` lần (trang bài chậm). Tab mở file .wav của bài trước không bao giờ bị lấy cho
+  bài sau (`Catcher.reset`). Nút Download của hộp bấm một lần cho mỗi bài, kể cả khi nó đổi tên thành "Download" (lại sau 60 giây không có file). Hộp khác (không phải hộp Download)
   đòi mua chỉ dừng lượt tải khi còn đó sau `OTHER_BOX_SECONDS`.
 - Bài của tài khoản khác: bỏ qua (`not_mine`, ghi `nguoi_khac`, lần chạy sau xem lại), trừ khi `--others` (ô tick
   "Tải cả bài của tài khoản khác" trong Studio, chủ chọn 01/11/2026). Nhận ra theo menu ⋯ đang mở: có Publish / Move
