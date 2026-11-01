@@ -25,7 +25,9 @@ from pathlib import Path
 PROGRESS = re.compile(r"^\d\d:\d\d:\d\d  \[(\d+)/(\d+)\] ")  # "12:00:00  [3/20] Title: ...", not a title's own [3/4]
 STEMS_START = re.compile(r"^\d\d:\d\d:\d\d  Stems & MIDI \(.*\): (\d+) bài cần tải")  # then [n/N] count the stems
 LISTED = re.compile(r"^(\d+)\t(.*)\t(https?://\S+)$")
-KEEP_LINES = 400
+# a download's last line: "Tổng: 4 bài tải xong, 1 bài lỗi, 3 bài của người khác (bỏ qua) (...)"
+TOTAL = re.compile(r"^\d\d:\d\d:\d\d  Tổng: (\d+) bài tải xong, (\d+) bài lỗi(?:, (\d+) bài của người khác)?")
+KEEP_LINES = 2000
 STOP_GRACE = 15 * 60  # seconds a download has to stop by itself (one song: up to 2 x 5 minutes) before it is ended
 # a task with stems: they stop while Suno makes them too, and once their files' Download is pressed they have up to
 # 10 minutes to arrive (suno/web.py FILES_WAIT), then they are unpacked
@@ -71,10 +73,12 @@ class Task:
         self.state = "running"  # running, done, failed, stopped
         self.code = None
         self.lines = []
+        self.lines_lock = threading.Lock()  # (the reader thread adds and drops lines while the page reads them)
         self.first = 0  # how many lines were dropped from the front of `lines` (KEEP_LINES): line numbers go on
         self.songs = []  # the songs a "list" printed: {"n", "title", "link"}
         self.done = self.total = 0
         self.phase = ""  # "stems" once a download's Stems & MIDI (or a stems task) has started
+        self.summary = None  # a download's result: {"done", "failed", "others"}
         self.started, self.ended = time.time(), None
         self.stopping = False
         self.proc = None
@@ -82,9 +86,14 @@ class Task:
 
     def to_dict(self, since=0, songs=True):
         """since: the number of lines the page has already (line numbers count from the task's start)."""
-        first, lines = self.first, list(self.lines)  # (one look: the reader thread may add lines meanwhile)
+        with self.lines_lock:
+            first, lines = self.first, list(self.lines)
+        sent = lines[max(0, since - first):]
+        if since < first:
+            sent = [f"… ({first - since} dòng đầu không còn giữ ở đây; nhật ký đầy đủ: thư mục logs của "
+                    "app, file suno.log)"] + sent
         return {"id": self.id, "kind": self.kind, "label": self.label, "state": self.state, "code": self.code,
-                "lines": lines[max(0, since - first):], "line_count": first + len(lines),
+                "lines": sent, "line_count": first + len(lines), "summary": self.summary,
                 "songs": self.songs if songs and self.state != "running" else [],
                 "song_count": len(self.songs), "done": self.done, "total": self.total, "phase": self.phase,
                 "started": self.started,
@@ -171,11 +180,15 @@ class SunoTasks:
         m = STEMS_START.search(line)
         if m:
             task.phase, task.done, task.total = "stems", 0, int(m.group(1))
-        task.lines.append(line)
-        if len(task.lines) > KEEP_LINES:
-            drop = len(task.lines) - KEEP_LINES
-            del task.lines[:drop]
-            task.first += drop
+        m = TOTAL.search(line)
+        if m:
+            task.summary = {"done": int(m.group(1)), "failed": int(m.group(2)), "others": int(m.group(3) or 0)}
+        with task.lines_lock:
+            task.lines.append(line)
+            if len(task.lines) > KEEP_LINES:
+                drop = len(task.lines) - KEEP_LINES
+                del task.lines[:drop]
+                task.first += drop
 
     def stop(self):
         """Stop the running task: a download after its current song, anything else now."""
@@ -185,9 +198,10 @@ class SunoTasks:
         task.stopping = True
         if task.kind in BY_SONG and task.stop_file:
             try:
+                task.stop_file.parent.mkdir(parents=True, exist_ok=True)  # (Windows' cleanup may have emptied it)
                 task.stop_file.write_text("", encoding="utf-8")
-            except OSError:
-                pass
+            except OSError as e:
+                self._line(task, f"(Không báo dừng được cho chương trình tải: {e}. App sẽ tắt nó sau ít phút.)")
             grace = STEMS_STOP_GRACE if task.kind == "stems" or "--stems" in task.args else STOP_GRACE
             threading.Thread(target=self._end_later, args=(task, grace), daemon=True).start()
         else:

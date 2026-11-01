@@ -19,8 +19,8 @@ class LibraryError(Exception):
     pass
 
 
-def _rows(folder: Path, stems=False):
-    """The songs done in the folder's list; with stems=True, the rows of their Stems & MIDI folders instead."""
+def _records(folder: Path):
+    """Every row of the folder's list, as read (Excel may have saved it with ; or tabs)."""
     path = folder / LIST_NAME
     if not path.is_file():
         return []
@@ -30,9 +30,41 @@ def _rows(folder: Path, stems=False):
         raise LibraryError(f"Không đọc được {path}: {e}") from e
     first = text.splitlines()[0] if text.strip() else ""
     delimiter = max((",", ";", "\t"), key=first.count)
+    return [{k: (v or "") for k, v in rec.items() if k}
+            for rec in csv.DictReader(io.StringIO(text, newline=""), delimiter=delimiter)]
+
+
+def _title(rec):
+    title = rec.get("ten_bai", "")
+    if title[:1] == "'" and title[1:2] in ("=", "+", "-", "@"):
+        title = title[1:]  # (suno/folder.py's guard against Excel formulas)
+    return title
+
+
+def pending(folder) -> list:
+    """The songs of the folder's list not downloaded: failed ("loi", tried again on the next download) or another
+    account's ("nguoi_khac"), with the reason written down; a song downloaded since is not one of them."""
+    folder = Path(folder)
+    if not folder.is_dir():
+        return []
+    recs = _records(folder)
+    done = {r.get("id") for r in recs if (r.get("trang_thai") or "").strip().lower() == "xong"}
+    found = []
+    for rec in recs:
+        state = (rec.get("trang_thai") or "").strip().lower()
+        if state not in ("loi", "nguoi_khac") or rec.get("id") in done or \
+                rec.get("dinh_dang", "").strip().lower() == STEMS:
+            continue
+        found.append({"title": _title(rec) or rec.get("id", ""), "state": state, "note": rec.get("ghi_chu", ""),
+                      "link": rec.get("link", ""), "at": rec.get("luc", "")})
+    found.sort(key=lambda r: r["at"], reverse=True)
+    return found
+
+
+def _rows(folder: Path, stems=False):
+    """The songs done in the folder's list; with stems=True, the rows of their Stems & MIDI folders instead."""
     rows = []
-    for rec in csv.DictReader(io.StringIO(text, newline=""), delimiter=delimiter):
-        rec = {k: (v or "") for k, v in rec.items() if k}
+    for rec in _records(folder):
         if (rec.get("trang_thai") or "xong").strip().lower() != "xong":
             continue
         name = rec.get("file", "")
@@ -42,9 +74,7 @@ def _rows(folder: Path, stems=False):
             continue
         if not stems and Path(name).suffix.lower() not in AUDIO:
             continue
-        title = rec.get("ten_bai", "")
-        if title[:1] == "'" and title[1:2] in ("=", "+", "-", "@"):
-            title = title[1:]  # (suno/folder.py's guard against Excel formulas)
+        title = _title(rec)
         rows.append({"title": title or Path(name).stem, "file": name, "format": rec.get("dinh_dang", ""),
                      "link": rec.get("link", ""), "at": rec.get("luc", ""), "id": rec.get("id", "")})
     return rows

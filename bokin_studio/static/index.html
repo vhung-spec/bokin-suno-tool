@@ -69,7 +69,7 @@ td.actions { white-space: nowrap; text-align: right; }
 .log { background: var(--code); border-radius: 8px; padding: 8px 10px; font: 12.5px/1.45 ui-monospace, Consolas, monospace;
   max-height: 260px; overflow: auto; white-space: pre-wrap; word-break: break-word; margin: 0; }
 .state-running { color: var(--accent); } .state-done { color: var(--ok); } .state-failed { color: var(--bad); }
-.state-stopped { color: var(--warn); }
+.state-stopped { color: var(--warn); } .state-partly { color: var(--warn); }
 .lyrics { background: var(--code); border-radius: 8px; padding: 10px 12px; white-space: pre-wrap; margin: 8px 0 0;
   max-height: 320px; overflow: auto; font-size: 14px; }
 .machine { font: 600 18px ui-monospace, Consolas, monospace; letter-spacing: 1px; }
@@ -196,6 +196,8 @@ iframe { flex: 1; width: 100%; border: 0; background: var(--bg); }
     <p class="hint" id="libraryEmpty">Chưa có bài nào. Tải nhạc ở trên, bài sẽ hiện ở đây.</p>
     <table id="library" hidden><thead><tr><th>Bài</th><th>Dạng</th><th>Tải lúc</th><th></th></tr></thead>
       <tbody></tbody></table>
+    <details id="pending" hidden style="margin-top:10px"><summary></summary>
+      <table><thead><tr><th>Bài</th><th>Vì sao</th><th>Lúc</th></tr></thead><tbody></tbody></table></details>
     <audio id="player" controls hidden style="width:100%;margin-top:10px"></audio>
     <div id="lyricsBox" hidden>
       <div class="row" style="margin-top:12px"><b class="grow" id="lyricsTitle"></b>
@@ -363,8 +365,11 @@ function renderTask(t) {
   $("taskLabel").textContent = t.label;
   const bySong = t.kind === "download" || t.kind === "stems";  // (they stop after the song being done)
   const stopping = bySong ? "Đang dừng sau bài đang tải…" : "Đang dừng…";
-  $("taskState").textContent = t.stopping && t.state === "running" ? stopping : STATES[t.state] || t.state;
-  $("taskState").className = "state-" + t.state;
+  const sum = t.summary;  // a download's result: some songs skipped is not all done
+  const partly = sum && sum.done && ((t.state === "done" && (sum.others || sum.failed)) || t.state === "failed");
+  $("taskState").textContent = t.stopping && t.state === "running" ? stopping
+    : partly ? "Xong một phần" : STATES[t.state] || t.state;
+  $("taskState").className = "state-" + t.state + (partly ? " state-partly" : "");
   $("stop").hidden = t.state !== "running";
   const atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 8;
   if (t.lines.length) {
@@ -378,7 +383,8 @@ function renderTask(t) {
   const bar = $("taskBar");
   bar.hidden = !(bySong && t.total);
   bar.firstElementChild.style.width = t.total ? `${Math.round(100 * t.done / t.total)}%` : "0";
-  $("taskCount").textContent = bySong && t.total ? `${t.phase === "stems" ? "Stems" : "Bài"} ${t.done}/${t.total}` : "";
+  $("taskCount").textContent = sum && t.state !== "running" ? summaryText(sum)
+    : bySong && t.total ? `${t.phase === "stems" ? "Stems" : "Bài"} ${t.done}/${t.total}` : "";
   const acc = $("accountTask").querySelector("pre");
   if (acc && ["login", "check", "remove"].includes(t.kind)) {
     acc.textContent = log.textContent;
@@ -391,6 +397,12 @@ function renderTask(t) {
     for (const s of t.songs) { const tr = el("tr"); tr.append(el("td", String(s.n)), el("td", s.title || "(không tên)")); tbody.append(tr); }
     $("listed").hidden = !t.songs.length;
   }
+}
+function summaryText(sum) {
+  const parts = [`Đã tải ${sum.done} bài`];
+  if (sum.failed) parts.push(`${sum.failed} bài lỗi (lần tải sau app thử lại)`);
+  if (sum.others) parts.push(`${sum.others} bài của tài khoản khác bỏ qua (muốn tải: tick ô "Tải cả bài của tài khoản khác")`);
+  return parts.join(" · ");
 }
 // One request at a time: a call while one is out runs again right after it, so lines never come twice.
 let pollTimer = null, wasRunning = false, polling = false, pollAgain = false, listedTask = null, offline = 0;
@@ -408,7 +420,7 @@ async function poll() {
       if (s.task.id === taskId && since !== lines) s.task.lines = [];  // (the page moved on meanwhile)
       renderTask(s.task); running = s.task.state === "running";
     }
-    if (wasRunning && !running) { refreshLibrary(); if (s.task) toast(`${s.task.label}: ${STATES[s.task.state] || s.task.state}`); }
+    if (wasRunning && !running) { refreshLibrary(); if (s.task) toast(`${s.task.label}: ${$("taskState").textContent}`); }
     wasRunning = running;
   } catch (e) {
     if (++offline >= 3) $("offline").hidden = false;
@@ -436,7 +448,10 @@ async function refreshLibrary() {
   const tbody = $("library").querySelector("tbody"); tbody.replaceChildren();
   for (const s of songs) {
     const tr = el("tr");
-    tr.append(el("td", s.title), el("td", (s.format || "").toUpperCase()), el("td", s.at));
+    const name = el("td", s.title), stem = (s.file || "").replace(/\.[^.\\/]+$/, "");
+    if (stem && stem !== s.title) name.append(el("div", stem, "hint"));  // (Suno's pairs share a title: "Bài (2)")
+    name.title = s.file || "";
+    tr.append(name, el("td", (s.format || "").toUpperCase()), el("td", s.at));
     const td = el("td", null, "actions");
     td.append(button("Nghe", "secondary small", () => play(s)));
     const lyr = button("Lời", "secondary small", () => openLyrics(s, false));
@@ -459,6 +474,16 @@ async function refreshLibrary() {
     tr.append(td); tbody.append(tr);
   }
   $("library").hidden = !songs.length; $("libraryEmpty").hidden = !!songs.length;
+  const pend = r.pending || [], body = $("pending").querySelector("tbody"); body.replaceChildren();
+  for (const p of pend) {
+    const why = p.state === "nguoi_khac" ? "Bài của tài khoản khác: bỏ qua" : "Lỗi (lần tải sau app thử lại)";
+    const reason = el("td", why); if (p.note) reason.append(el("div", p.note, "hint"));
+    const tr = el("tr"); tr.append(el("td", p.title), reason, el("td", p.at)); body.append(tr);
+  }
+  const failedN = pend.filter((p) => p.state === "loi").length, othersN = pend.length - failedN;
+  $("pending").querySelector("summary").textContent = `Bài chưa tải được: ${[failedN ? failedN + " bài lỗi" : "",
+    othersN ? othersN + " bài của tài khoản khác" : ""].filter(Boolean).join(", ")}`;
+  $("pending").hidden = !pend.length;
 }
 let libraryFolder = "";
 function needAccount() {

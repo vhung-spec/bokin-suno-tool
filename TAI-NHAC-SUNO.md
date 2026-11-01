@@ -158,7 +158,13 @@ Trong thư mục nhạc có file **`danh-sach.csv`** (mở bằng Excel): mỗi 
   xoá file nhạc**.
 - **Lần chạy sau nhanh hơn**: Suno xếp bài mới nhất lên đầu, nên tool chỉ đọc phần đầu danh sách của workspace, tới
   khi gặp 50 bài liền đã tải thì thôi. Nếu bạn chuyển bài **cũ** vào workspace (chúng nằm tít bên dưới), thêm
-  `--full` để tool đọc hết danh sách.
+  `--full` để tool đọc hết danh sách. **Playlist** thì tool luôn đọc hết (bài thêm vào sau có thể nằm cuối). Lần
+  trước bị dừng giữa chừng (bấm Dừng, hết lượt tải, `--limit`) thì lần sau tool cũng đọc hết danh sách.
+- Tool đọc danh sách chậm rãi: trang còn đang tải thêm bài thì chờ, đọc xong thì đọc lại từ đầu một lần để không sót
+  bài hiện chậm.
+- Bài lỗi ở lần trước được thử **sau** các bài chưa thử, nên một bài hỏng không chặn các bài khác.
+- Bài của tài khoản khác đã xem ở lần trước (menu ⋯ không có Publish / Move to Trash, cùng tài khoản đang dùng)
+  không mở lại; bài ghi `nguoi_khac` bởi bản cũ của tool thì được xem lại.
 - Muốn tải lại một bài: xoá dòng của bài đó trong `danh-sach.csv`, lưu lại dạng **CSV UTF-8**, rồi chạy lại.
 - **Đóng `danh-sach.csv` trong Excel** trước khi chạy tool.
 - Mỗi workspace nên tải vào một thư mục riêng cho dễ tìm. Chung một thư mục cũng không sao.

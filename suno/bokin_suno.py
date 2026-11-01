@@ -380,14 +380,17 @@ def download_one(page, catcher, song, fmt, out, label, others=False):
                 page.wait_for_timeout(3000)
         path = out.target(title, song.id, fmt)
         part.replace(path)
+        try:
+            out.add(song, path, fmt, title)
+        except Exception:
+            with contextlib.suppress(OSError):  # (not listed: not kept either, or the next run makes "Title (2)")
+                path.unlink()
+            raise
         if lyrics:
             try:
                 path.with_suffix(".txt").write_text(lyrics.replace("\r\n", "\n") + "\n", encoding="utf-8")
             except OSError as e:
-                if disk_full(e):
-                    raise
                 log.warning("%s: không ghi được lời bài hát: %s", label, e)
-        out.add(song, path, fmt, title)
         return path
     finally:
         with contextlib.suppress(OSError):
@@ -574,6 +577,42 @@ def cmd_stems(args, data):
     return 1 if failed or stopped or bad else 0
 
 
+# The folders whose last download did not get through its songs (stopped, the plan's downloads used up, --limit):
+# their next run reads the whole list, as the songs not tried yet are below the ones downloaded
+UNFINISHED = "chua-xong.json"
+
+
+def unfinished(data, root):
+    try:
+        return str(root) in json.loads((data.root / UNFINISHED).read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return False
+
+
+def set_unfinished(data, root, flag):
+    path = data.root / UNFINISHED
+    try:
+        roots = set(json.loads(path.read_text(encoding="utf-8")))
+    except (OSError, ValueError, TypeError):
+        roots = set()
+    if (str(root) in roots) == flag:
+        return
+    (roots.add if flag else roots.discard)(str(root))
+    with contextlib.suppress(OSError):
+        path.write_text(json.dumps(sorted(roots), ensure_ascii=False), encoding="utf-8")
+
+
+# A song the ⋯ menu showed to be another account's (its note says so, and which account looked): not opened again on
+# the next run with that account. Rows written otherwise (an older version went by the Follow button alone, and took
+# the owner's own songs for someone else's) are looked at again.
+NOT_MINE_SEEN = "menu ⋯"
+
+
+def settled_not_mine(out, song_id, name):
+    note = out.not_mine_note(song_id)
+    return note is not None and NOT_MINE_SEEN in note and f"[tài khoản {name}]" in note
+
+
 def stop_asked():
     """Bokin Suno Studio's Stop button: BOKIN_SUNO_STOP names a file that appears when it is pressed."""
     flag = os.environ.get("BOKIN_SUNO_STOP")
@@ -594,15 +633,28 @@ def cmd_download(args, data):
     stopped = ""
     with single_run(data), browser(args, data, name, args.headless) as context:
         page = first_page(context)
-        # (with --stems the whole list is read: a song without its stems may be anywhere in it)
+        # (with --stems the whole list is read: a song without its stems may be anywhere in it; a song written down as
+        # someone else's is not known: it is looked at again)
+        whole = args.full or args.stems or unfinished(data, out.root)
+        if whole and not (args.full or args.stems):
+            log.info("Lần tải trước vào thư mục này chưa tải hết các bài: đọc hết danh sách")
         songs, bad = gather_songs(data, page, name, account, links,
-                                  lambda sid: (out.done(sid, fmt) and (not args.stems or out.stems_ok(sid)))
-                                  or out.not_mine(sid),
-                                  None if args.full or args.stems else KNOWN_IN_A_ROW)
-        # (a song written down as someone else's is looked at again: the page decides, nothing pressed if so)
-        todo = [s for s in songs if not out.done(s.id, fmt)]
+                                  lambda sid: out.done(sid, fmt) and (not args.stems or out.stems_ok(sid)),
+                                  None if whole else KNOWN_IN_A_ROW)
+        # (a song written down as someone else's is looked at again, unless its ⋯ menu showed it with this account:
+        # the page decides, nothing pressed if so)
+        settled = [s for s in songs
+                   if not out.done(s.id, fmt) and not args.others and settled_not_mine(out, s.id, name)]
+        skip = {s.id for s in settled}
+        todo = [s for s in songs if not out.done(s.id, fmt) and s.id not in skip]
+        # songs that failed before go last: one that fails every time never keeps the others from being tried
+        todo = [s for s in todo if not out.failed_before(s.id, fmt)] + [s for s in todo if out.failed_before(s.id, fmt)]
         log.info("Đọc được %d bài: %d bài đã tải từ trước, %d bài cần tải %s vào %s", len(songs),
-                 len(songs) - len(todo), len(todo), fmt.upper(), out.root)
+                 len(songs) - len(todo) - len(settled), len(todo), fmt.upper(), out.root)
+        if settled:
+            others += len(settled)
+            log.info("%d bài của tài khoản khác (đã xem ở lần trước): bỏ qua. Muốn tải: tick ô \"Tải cả bài của tài "
+                     "khoản khác\" (dòng lệnh: --others)", len(settled))
         recheck = sum(1 for s in todo if out.not_mine(s.id))
         if recheck:
             log.info("%d bài lần trước ghi là của người khác: xem lại%s", recheck,
@@ -613,10 +665,13 @@ def cmd_download(args, data):
         if again:
             log.info("Thêm %d bài lần trước bị lỗi: thử lại", len(again))
             todo += again
-        if args.limit is not None and len(todo) > args.limit:
+        cut = args.limit is not None and len(todo) > args.limit
+        if cut:
             todo = todo[:args.limit]
             log.info("Lần này chỉ tải %d bài (--limit)", len(todo))
         check_space(out.root, len(todo), fmt)
+        if todo:
+            set_unfinished(data, out.root, True)
         catcher = web.Catcher(context)
         stuck = 0
         loop_started = time.monotonic()
@@ -625,25 +680,28 @@ def cmd_download(args, data):
                 stopped = "Đã dừng theo yêu cầu. Chạy lại để tải tiếp các bài còn thiếu"
                 break
             label = f"[{n}/{len(todo)}] {song.title or song.id}"
+            failed_before = out.failed_before(song.id, fmt)
             try:
                 path = download_one(page, catcher, song, fmt, out, label, args.others)
             except Exception as e:
                 log.debug("download failed", exc_info=True)
                 note = describe(e)
-                if getattr(e, "code", "") == "not_mine" and song.id in retried:
+                code = getattr(e, "code", "")
+                if code in ("not_mine", "not_ready"):
+                    stuck = 0  # (the page works: this song cannot be downloaded)
+                if code == "not_mine" and song.id in retried:
                     log.warning("%s: bài của tài khoản khác, bỏ qua lần này", label)  # (the folder may be shared)
                     continue
-                if getattr(e, "code", "") == "not_mine" and out.has_audio(song.id):
+                if code == "not_mine" and out.has_audio(song.id):
                     log.error("%s: bài này đã được tải bằng một tài khoản Suno khác. Chọn đúng tài khoản đó rồi chạy "
                               "lại", label)
                     failed += 1
                     continue
-                if getattr(e, "code", "") == "not_mine":
+                if code == "not_mine":
                     log.warning("%s: %s", label, note)
                     others += 1
-                    stuck = 0
                     with contextlib.suppress(folder.FolderError):
-                        out.add_not_mine(song, fmt, note)  # (looked at again on the next run)
+                        out.add_not_mine(song, fmt, f"{note} [tài khoản {name}]")
                     continue
                 log.error("%s: %s", label, note)
                 failed += 1
@@ -652,9 +710,9 @@ def cmd_download(args, data):
                     break
                 with contextlib.suppress(folder.FolderError):
                     out.add_failure(song, fmt, note)  # tried again on the next run
-                if getattr(e, "code", "") != "not_ready":
+                if code != "not_ready":
                     keep_failure(data, page, name)
-                    stuck += 1
+                    stuck += 0 if failed_before else 1  # (one that failed before: that song, not Suno's page)
                     if stuck >= STUCK_IN_A_ROW:
                         stopped = (f"{STUCK_IN_A_ROW} bài liền nhau không tải được: có thể Suno đã đổi giao diện. "
                                    f"Gửi các file loi-*.png và loi-*.html trong {data.logs} cho người sửa tool")
@@ -669,6 +727,8 @@ def cmd_download(args, data):
                 eta = f" (còn {left} bài, khoảng {human_time((time.monotonic() - loop_started) / n * left)})"
             log.info("%s: xong → %s%s", label, path.name, eta)
             page.wait_for_timeout(PACE_SECONDS * 1000)
+        if not stopped and not cut:
+            set_unfinished(data, out.root, False)
         if args.stems and not stopped:  # the Stems & MIDI of the songs of these links that are downloaded
             listed = [s for s in songs + again if out.done(s.id, fmt)]
             s_done, s_failed, stopped = run_stems(page, catcher, listed, out, args, data, name, retried)
@@ -922,6 +982,21 @@ def cmd_selftest(args, data):
         finally:
             web.download_stems = real
             log.disabled = False
+        seen = web.Song("88888888-2222-3333-4444-555555555555", "Tài khoản khác")
+        old = web.Song("99999999-2222-3333-4444-555555555555", "Bản cũ ghi nhầm")
+        out.add_not_mine(seen, "wav", "Bài của tài khoản khác (menu ⋯ không có Publish) [tài khoản suno1]")
+        out.add_not_mine(old, "wav", "Bài của người khác (cạnh tên bài có nút Follow): bỏ qua, không bấm tải")
+        check(settled_not_mine(out, seen.id, "suno1") and not settled_not_mine(out, seen.id, "suno2")
+              and not settled_not_mine(out, old.id, "suno1") and not settled_not_mine(out, sid, "suno1"),
+              "a skipped song is not opened again only when its ⋯ menu was seen with this account")
+        check(not unfinished(d, out.root), "a folder not downloaded into yet is finished")
+        set_unfinished(d, out.root, True)
+        check(unfinished(d, out.root) and not unfinished(d, tmp), "a download that did not get through its songs")
+        set_unfinished(d, out.root, False)
+        check(not unfinished(d, out.root), "the next one that did")
+    check(web.newest_first("https://suno.com/create?wid=abc") and web.newest_first("https://suno.com/create")
+          and web.newest_first("https://suno.com/me") and not web.newest_first("https://suno.com/playlist/abc")
+          and not web.newest_first("https://suno.com/@someone"), "only a workspace lists the newest songs first")
     check(stem_files("wav, MIDI") == ("wav", "midi"), "stem files")
     for bad in ("", "flac", "wav,,zip"):
         try:

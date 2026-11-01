@@ -197,6 +197,11 @@ class Folder:
     def not_mine(self, song_id):
         return any(sid == song_id and r["trang_thai"] == NOT_MINE for (sid, _), r in self.rows.items())
 
+    def not_mine_note(self, song_id):
+        """The note of the song's row written down as someone else's, or None."""
+        return next((r.get("ghi_chu", "") for (sid, _), r in self.rows.items()
+                     if sid == song_id and r["trang_thai"] == NOT_MINE), None)
+
     def failed_before(self, song_id, fmt):
         return (self.rows.get((song_id, fmt)) or {}).get("trang_thai") == FAILED
 

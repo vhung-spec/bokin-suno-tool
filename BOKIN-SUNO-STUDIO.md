@@ -97,6 +97,11 @@ Key của Bokin Suno Master không mở được Bokin Suno Studio (và ngược
   sau bấm **Tải về** là tải tiếp các bài còn thiếu.
 - **Chạy lại thì chỉ tải bài mới.** Bài lỗi (ví dụ bài Suno đang tạo dở) được thử lại ở lần sau.
 - Ô **Đọc hết danh sách**: chỉ cần khi bạn chuyển bài **cũ** vào workspace (chúng nằm tít bên dưới danh sách).
+  Playlist thì app luôn đọc hết; lần trước bị dừng giữa chừng thì lần sau app cũng đọc hết.
+- Xong một lượt tải, app ghi rõ: **Đã tải N bài · M bài lỗi · K bài của tài khoản khác bỏ qua**. Có bài bỏ qua
+  hoặc lỗi thì trạng thái là **Xong một phần** (màu cam).
+- Dưới bảng bài đã tải có mục **Bài chưa tải được** (bấm để mở): từng bài lỗi hoặc của tài khoản khác, kèm lý do.
+- Nhiều bài trùng tên (Suno làm bài theo cặp): dưới tên bài có tên file, ví dụ `BNCup (2)`.
 - Trong thư mục nhạc có file **danh-sach.csv** (mở bằng Excel): mỗi bài một dòng. **Đóng file này trong Excel** trước
   khi tải.
 

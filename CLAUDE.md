@@ -54,7 +54,18 @@
   khác, rồi bấm nút đó; "Downloads 0" thì dừng, không bấm. Trên ảnh bìa có nút "Download cover image": không bấm.
 - Trang Create (`suno.com/create`, có thể có `?wid=`): danh sách bài là khung cuộn (`clip-browser-list-scroller`)
   chia trang bằng nút Previous page / Next page; **Next page vẫn bật ở trang cuối** và bấm không đổi gì: tool dừng
-  khi bấm Next page mà danh sách không đổi.
+  khi bấm Next page mà danh sách không đổi (sau `NEXT_PAGE_QUIET` giây trang không tải gì, tối đa `NEXT_PAGE_WAIT`).
+- Đọc danh sách (`web.list_songs`, rà soát 01/11/2026; trang playlist thật **chưa thử**): khung danh sách chọn lại mỗi
+  lượt (khung nhiều link hơn thì thay, bỏ bài đọc từ khung cũ); hết danh sách khi ở cuối mà `LIST_END_QUIET` giây
+  không có gì mới và trang không chờ gì (`_Net`), tối đa `LIST_END_MAX`; dòng trong tầm nhìn chưa có link thì đứng chờ
+  (`HOLD_SECONDS`); đọc lại từ đầu tới khi không thêm bài (`SWEEPS`). Dừng sớm khi gặp 50 bài liền đã tải chỉ cho
+  workspace (`web.newest_first`) và khi lần trước tải hết (`chua-xong.json` trong `data/`). Bài lỗi lần trước thử
+  sau cùng và không tính vào `STUCK_IN_A_ROW`.
+- Mọi lần đọc phần tử / bấm trong lúc tải một bài có hạn ngắn (`READ_MS`, `_press`), không đợi 30 giây mặc định của
+  Playwright: lỗi `TimeoutError: Timeout 30000ms` của chủ (01/11/2026) là hộp Download mở chậm hơn 5 giây rồi bị
+  bấm ⋯ đè lên; nay chờ hộp `BOX_WAIT_MS` và dùng hộp đã mở. Tab mở file .wav của bài trước không bao giờ bị lấy cho
+  bài sau (`Catcher.reset`). Nút Download của hộp bấm một lần (lại sau 60 giây). Hộp khác (không phải hộp Download)
+  đòi mua chỉ dừng lượt tải khi còn đó sau `OTHER_BOX_SECONDS`.
 - Bài của tài khoản khác: bỏ qua (`not_mine`, ghi `nguoi_khac`, lần chạy sau xem lại), trừ khi `--others` (ô tick
   "Tải cả bài của tài khoản khác" trong Studio, chủ chọn 01/11/2026). Nhận ra theo menu ⋯ đang mở: có Publish / Move
   to Trash (`text_owner_item`) là bài của mình; chỉ khi không có mà cạnh tên bài có nút Follow mới là bài người khác

@@ -184,6 +184,13 @@ def test_every_button(studio):
         assert "state-done" in run_task(page, "#download")
         log = page.locator("#taskLog").inner_text()
         assert "3 bài tải xong" in log and "1 bài của người khác (bỏ qua)" in log, log
+        # the result said plainly: some songs skipped is not all done; the skipped song listed with its reason
+        assert page.locator("#taskState").inner_text() == "Xong một phần"
+        assert page.locator("#taskCount").inner_text().startswith("Đã tải 3 bài · 1 bài của tài khoản khác bỏ qua")
+        page.wait_for_function("() => !document.getElementById('pending').hidden")
+        assert "1 bài của tài khoản khác" in page.locator("#pending summary").inner_text()
+        page.click("#pending summary")
+        assert "Bài của tài khoản khác: bỏ qua" in page.locator("#pending tbody").inner_text()
         assert studio["theirs"] not in fake.counted and studio["theirs"] not in [s for s, _ in fake.picked]
         page.wait_for_function("() => document.querySelectorAll('#library tbody tr').length === 3")
         rows = page.locator("#library tbody tr")

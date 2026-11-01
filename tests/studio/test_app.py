@@ -155,6 +155,55 @@ def test_stems_progress(tmp_path):
     assert task.to_dict()["phase"] == "stems" and (task.done, task.total) == (1, 3)
 
 
+def test_download_result(tmp_path):
+    """A download's last line gives the page its result: songs downloaded, failed, another account's (skipped)."""
+    from bokin_studio.suno_tasks import SunoTasks, Task
+
+    tasks, task = SunoTasks(tmp_path / "s"), Task("download", [], "Tải nhạc (WAV)")
+    tasks._line(task, "12:00:09  [8/8] BNCup1: Bài của tài khoản khác (menu ⋯ ...): bỏ qua, không bấm tải")
+    assert task.to_dict()["summary"] is None and (task.done, task.total) == (8, 8)
+    tasks._line(task, "12:00:10  Tổng: 4 bài tải xong, 1 bài lỗi, 3 bài của người khác (bỏ qua) (240.0 MB trong "
+                      "2 phút). Danh sách: D:\\Nhac\\danh-sach.csv")
+    assert task.to_dict()["summary"] == {"done": 4, "failed": 1, "others": 3}
+    tasks._line(task, "12:00:11  Tổng: 2 bài tải xong, 0 bài lỗi (1 MB trong 1 phút). Danh sách: x")
+    assert task.summary == {"done": 2, "failed": 0, "others": 0}
+
+
+def test_log_lines_dropped_are_said(tmp_path, monkeypatch):
+    """A page opened again during a long download is told the first lines are not kept, and where the log is."""
+    from bokin_studio import suno_tasks
+    from bokin_studio.suno_tasks import SunoTasks, Task
+
+    monkeypatch.setattr(suno_tasks, "KEEP_LINES", 5)
+    tasks, task = SunoTasks(tmp_path / "s"), Task("download", [], "Tải nhạc (WAV)")
+    for n in range(12):
+        tasks._line(task, f"dòng {n}")
+    d = task.to_dict(since=0)
+    assert d["line_count"] == 12 and d["lines"][1:] == [f"dòng {n}" for n in range(7, 12)]
+    assert "7 dòng đầu" in d["lines"][0] and "suno.log" in d["lines"][0]
+    assert task.to_dict(since=9)["lines"] == ["dòng 9", "dòng 10", "dòng 11"]
+
+
+def test_songs_not_downloaded_are_listed(client, tmp_path):
+    """The library also lists the songs that failed or were another account's, with the reason; not a song
+    downloaded since."""
+    folder = tmp_path / "Nhac"
+    folder.mkdir()
+    with open(folder / "danh-sach.csv", "w", encoding="utf-8-sig", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["ten_bai", "file", "trang_thai", "ghi_chu", "dinh_dang", "link", "luc", "id"])
+        w.writerow(["BNCup", "BNCup.wav", "xong", "", "wav", SONG_A, "2026-11-01 10:00:00", "a"])
+        w.writerow(["BNCup", "", "loi", "TimeoutError", "wav", SONG_A, "2026-11-01 09:00:00", "a"])
+        w.writerow(["BNCup1", "", "nguoi_khac", "Bài của tài khoản khác", "wav", "", "2026-11-01 10:01:00", "b"])
+        w.writerow(["Chưa xong", "", "loi", "Suno chưa cho tải", "wav", "", "2026-11-01 10:02:00", "c"])
+        w.writerow(["Stems", "", "loi", "hết credit", "stems", "", "2026-11-01 10:03:00", "a"])
+    (folder / "BNCup.wav").write_bytes(b"RIFF")
+    r = client.get("/api/library", headers=H, params={"folder": str(folder)}).json()
+    assert [s["title"] for s in r["songs"]] == ["BNCup"]
+    assert [(p["title"], p["state"], p["note"]) for p in r["pending"]] == [
+        ("Chưa xong", "loi", "Suno chưa cho tải"), ("BNCup1", "nguoi_khac", "Bài của tài khoản khác")]
+
+
 def test_stop_login(client, monkeypatch):
     monkeypatch.setenv("STUB_LOGIN_WAIT", "60")
     assert client.post("/api/suno/login", headers=H, json={"account": "suno-2"}).status_code == 200

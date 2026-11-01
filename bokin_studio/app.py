@@ -473,7 +473,8 @@ def create_app(token: str, port: int = paths.PORTS[0], extra_hosts: tuple = (), 
     @app.get("/api/library")
     def library_songs(folder: str = ""):
         target = _folder(folder)
-        return {"folder": str(target), "songs": library_call(library.songs, target)}
+        return {"folder": str(target), "songs": library_call(library.songs, target),
+                "pending": library_call(library.pending, target)}
 
     @app.get("/api/library/lyrics")
     def library_lyrics(folder: str, file: str):

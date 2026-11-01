@@ -21,6 +21,7 @@ audio any other way. Every selector and button text is in SEL. BOKIN_SUNO_URL po
 (tests/fake_suno.py).
 """
 import base64
+import contextlib
 import json
 import os
 import re
@@ -111,40 +112,68 @@ JS_STATE = """() => { const c = window.Clerk; if (!c) return 'none'; if (!c.load
   return c.user ? 'in:' + (c.user.id || '') : 'out'; }"""
 
 # One pass over the song list: the songs it shows now, then a scroll. The list is the scrollable box holding most
-# song links (marked so later passes use the same box); links in fixed or sticky bars (the player) are not songs of
-# the list.
-JS_COLLECT = r"""(sel) => {
+# song links, looked for again on every pass (a side panel can show its songs before the list's rows arrive): another
+# box holding clearly more links takes the mark (data-bokin-list, a new number) and `switched` says the songs read so
+# far were not the list's. Links in fixed or sticky bars (the player) are not songs of the list; when the page itself
+# is the list, neither are links in other scrollable boxes, side panels, menus or dialogs. A pass then scrolls part of
+# a view (a row is seen in two passes at least), unless told to stay (rows still coming where it is).
+JS_COLLECT = r"""([sel, scroll]) => {
   const ID = /\/song\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
   const pinned = (el) => { for (let p = el; p && p !== document.body; p = p.parentElement) {
     const pos = getComputedStyle(p).position; if (pos === 'fixed' || pos === 'sticky') return true; } return false; };
   const scrollable = (el) => /(auto|scroll|overlay)/.test(getComputedStyle(el).overflowY)
     && el.scrollHeight > el.clientHeight + 4;
+  const page = document.scrollingElement;
   const links = [...document.querySelectorAll(sel)].filter(a => ID.test(a.getAttribute('href') || '') && !pinned(a));
-  let box = document.querySelector('[data-bokin-list]');
-  if (!box || !box.isConnected) {
-    const counts = new Map();
-    for (const a of links) {
-      let p = a.parentElement;
-      while (p && p !== document.body && !scrollable(p)) p = p.parentElement;
-      const b = (p && p !== document.body) ? p : document.scrollingElement;
-      counts.set(b, (counts.get(b) || 0) + 1);
-    }
-    let best = 0; box = null;
-    for (const [b, n] of counts) if (n > best) { box = b; best = n; }
-    if (box && box !== document.scrollingElement) box.setAttribute('data-bokin-list', '1');
-  }
-  if (!box) return {songs: [], bottom: true, height: 0};
-  const songs = [];
+  const owner = new Map(), counts = new Map();
   for (const a of links) {
-    if (box !== document.scrollingElement && !box.contains(a)) continue;
+    let p = a.parentElement;
+    while (p && p !== document.body && !scrollable(p)) p = p.parentElement;
+    const b = (p && p !== document.body) ? p : page;
+    if (b === page && a.closest('aside, nav, footer, [role="dialog"], [role="menu"], [role="complementary"]')) continue;
+    owner.set(a, b); counts.set(b, (counts.get(b) || 0) + 1);
+  }
+  let box = document.querySelector('[data-bokin-list]');
+  const kept = box && box.isConnected;
+  if (!kept) box = null;
+  const have = box ? (counts.get(box) || 0) : 0;
+  let best = null, most = 0;
+  for (const [b, n] of counts) if (n > most) { best = b; most = n; }
+  let switched = false;
+  if (best && best !== box && (!box || most >= have + 2)) {
+    switched = kept;
+    if (box) box.removeAttribute('data-bokin-list');
+    const root = document.documentElement, gen = +(root.getAttribute('data-bokin-gen') || 0) + 1;
+    root.setAttribute('data-bokin-gen', String(gen));
+    box = best; box.setAttribute('data-bokin-list', String(gen));
+  }
+  if (!box) return {songs: [], bottom: true, height: 0, switched: false};
+  const songs = [];
+  const view = box === page ? {top: 0, bottom: innerHeight} : box.getBoundingClientRect();
+  let inView = 0;  // the list's song links in sight (none: its rows there are still placeholders)
+  for (const a of links) {
+    if (box === page ? owner.get(a) !== page : !box.contains(a)) continue;
     const text = ((a.innerText || '').trim().split('\n')[0] || a.getAttribute('title') || '').trim();
     songs.push([a.getAttribute('href').match(ID)[1].toLowerCase(), text]);
+    const r = a.getBoundingClientRect();
+    if (r.height && r.bottom > view.top && r.top < view.bottom) inView++;
   }
-  const before = box.scrollTop;
-  box.scrollTop = before + Math.max(200, box.clientHeight * 0.8);
+  if (scroll) box.scrollTop = box.scrollTop + Math.max(200, box.clientHeight * 0.6);
   const bottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 4;
-  return {songs, bottom, height: box.scrollHeight};
+  return {songs, bottom, height: box.scrollHeight, switched, inView};
 }"""
+
+# A song link the list can count (not the player bar's): the list has begun to show
+JS_LIST_SHOWS = r"""(sel) => [...document.querySelectorAll(sel)].some((a) => {
+  if (!/\/song\/[0-9a-f-]{36}/i.test(a.getAttribute('href') || '')) return false;
+  for (let p = a; p && p !== document.body; p = p.parentElement) {
+    const pos = getComputedStyle(p).position; if (pos === 'fixed' || pos === 'sticky') return false; }
+  return true; })"""
+
+# Scroll the list: "top" (to read it again from the start) or "back" (up a view, so rows loaded on reaching the end
+# are asked for again)
+JS_SCROLL = r"""(where) => { const b = document.querySelector('[data-bokin-list]') || document.scrollingElement;
+  b.scrollTop = where === 'top' ? 0 : Math.max(0, b.scrollTop - b.clientHeight); }"""
 
 # The song links the list shows now (to tell whether Next page / Load more changed it)
 JS_SHOWN = r"""(sel) => { const box = document.querySelector('[data-bokin-list]') || document;
@@ -220,19 +249,48 @@ def _visible(locator):
         return False
 
 
+# An element read from a list (.all()) can be gone by the time it is read (a box Suno closes, a list it draws again):
+# reading it then waits this long, not Playwright's 30 s, and gives nothing.
+READ_MS = 1500
+
+
 def _enabled(locator):
     try:
-        return (locator.is_visible() and locator.is_enabled() and locator.get_attribute("aria-disabled") != "true"
-                and locator.get_attribute("data-disabled") is None)
+        return (locator.is_visible() and locator.is_enabled(timeout=READ_MS)
+                and _attr(locator, "aria-disabled") != "true" and _attr(locator, "data-disabled") is None)
     except Exception:
         return False
 
 
 def _text(locator):
     try:
-        return re.sub(r"\s+", " ", locator.inner_text()).strip()
+        return re.sub(r"\s+", " ", locator.inner_text(timeout=READ_MS)).strip()
     except Exception:
         return ""
+
+
+def _attr(locator, name):
+    try:
+        return locator.get_attribute(name, timeout=READ_MS)
+    except Exception:
+        return None
+
+
+def _label(locator):
+    """A button's text, or its aria-label (an icon button)."""
+    return _text(locator) or (_attr(locator, "aria-label") or "")
+
+
+def _press(locator, timeout_ms=5000, hover=False):
+    """Clicks (or hovers); False when it could not (covered by a box that opened late, gone): the caller looks again
+    instead of waiting Playwright's 30 s and failing the song."""
+    try:
+        (locator.hover if hover else locator.click)(timeout=timeout_ms)
+        return True
+    except Exception as e:
+        if "has been closed" in str(e):
+            raise
+        return False
 
 
 def _without(text, title):
@@ -246,13 +304,7 @@ def _find_text(page, selector, pattern):
     for loc in page.locator(selector).all():
         if not _visible(loc):
             continue
-        text = _text(loc)
-        if not text:
-            try:
-                text = loc.get_attribute("aria-label") or ""
-            except Exception:
-                text = ""
-        if pattern.search(text):
+        if pattern.search(_label(loc)):
             return loc
     return None
 
@@ -412,12 +464,57 @@ def _share_link(url):
     return bool(re.match(r"/s/[^/]+/?$", urlparse(url).path))
 
 
+# Reading a list: it has ended once at its end nothing new came for LIST_END_QUIET seconds while the page was not
+# waiting for anything (a playlist that loads its next rows slowly is not cut short), or for LIST_END_MAX seconds
+# whatever the page does (a page that never stops asking). Next page has NEXT_PAGE_WAIT seconds to change the list.
+LIST_END_QUIET, LIST_END_MAX = 3, 15
+NEXT_PAGE_QUIET, NEXT_PAGE_WAIT = 10, 45
+SWEEPS = 3  # a list is read again from its top until a reading finds nothing new, this many times at most
+HOLD_SECONDS = 8  # rows in sight without their songs yet: the list stays where it is this long before going on
+
+
+class _Net:
+    """When the page last asked for or received anything, and what it still waits for (a request open for more than
+    STALE seconds, the player's stream or a long poll, is not waited for)."""
+    STALE = 10
+
+    def __init__(self, page):
+        self.page, self.open, self.at = page, {}, time.monotonic()
+        self.handlers = (("request", lambda r: self._on(r, True)), ("response", lambda r: self._on(r.request, False)),
+                         ("requestfailed", lambda r: self._on(r, False)))
+        for event, handler in self.handlers:
+            page.on(event, handler)
+
+    def _on(self, request, opened):
+        self.at = time.monotonic()
+        if opened:
+            self.open[id(request)] = self.at
+        else:
+            self.open.pop(id(request), None)
+
+    def quiet(self, seconds):
+        now = time.monotonic()
+        return now - self.at >= seconds and all(now - t > self.STALE for t in self.open.values())
+
+    def close(self):
+        for event, handler in self.handlers:
+            with contextlib.suppress(Exception):
+                self.page.remove_listener(event, handler)
+
+
+def newest_first(url):
+    """A workspace (the Create page) or the account's own library: Suno lists the newest songs first. A playlist keeps
+    its own order (songs added later may come last)."""
+    u = urlparse(url)
+    return u.path.rstrip("/") in ("/create", "/me") or "wid=" in u.query
+
+
 def list_songs(page, url, log, known=None, known_in_a_row=None, limit_minutes=20):
     """The songs shown at `url` (a workspace, playlist or song link, or a share link to one), in the order shown.
     A link that opens one song's page gives that song alone: the other song links on such a page (Similar, the
-    artist's other songs) are other people's songs. With known(id) and known_in_a_row, reading stops once that many
-    songs in a row are known: Suno lists the newest songs first, so a second run reads only the top of a large
-    workspace."""
+    artist's other songs) are other people's songs. With known(id) and known_in_a_row, reading a workspace stops once
+    that many songs in a row are known: Suno lists the newest songs first there, so a second run reads only the top of
+    a large workspace. Any other list is read to its end."""
     page.goto(url, wait_until="domcontentloaded", timeout=90_000)
     if _share_link(url):  # Suno sends a share link on to the song's page, at once or from the page's script
         end = time.monotonic() + 30
@@ -434,17 +531,36 @@ def list_songs(page, url, log, known=None, known_in_a_row=None, limit_minutes=20
         if _share_link(url) or not song_id_of(url):
             log.info("Link này là link của một bài (không phải workspace): chỉ tải đúng bài đó")
         return [Song(one, "")]
+    if known_in_a_row and not (newest_first(page.url) or newest_first(url)):
+        known_in_a_row = None
+    net = _Net(page)
     try:
-        page.locator(SEL["song_link"]).first.wait_for(state="attached", timeout=30_000)
-    except Exception:
+        return _read_list(page, log, net, known, known_in_a_row, limit_minutes)
+    finally:
+        net.close()
+
+
+def _read_list(page, log, net, known, known_in_a_row, limit_minutes):
+    try:  # (the player bar's song link is not the list)
+        page.wait_for_function(JS_LIST_SHOWS, arg=SEL["song_link"], timeout=60_000, polling=250)
+    except Exception as e:
+        if "has been closed" in str(e):
+            raise
         raise SunoError("no_songs", "Không thấy bài nào ở link này. Kiểm tra link (mở link trong Chrome thường xem có "
                                     "đúng workspace không); workspace trống thì không có gì để tải")
-    page.wait_for_timeout(1000)
+    _poll(page, lambda: net.quiet(1), 5000, 250)
     songs = {}
-    quiet, last_height, last_logged, streak = 0, -1, 0, 0
+    last_height, last_logged, streak = -1, 0, 0
+    stalled = None  # when the list was last seen at its end with nothing new
+    nudged, sweeps, swept_new = False, 0, 0
+    held = None  # since when the list stays where it is, its rows in sight still loading
+    scroll, in_view = True, 0
     deadline = time.monotonic() + limit_minutes * 60
     while time.monotonic() < deadline:
-        r = page.evaluate(JS_COLLECT, SEL["song_link"])
+        r = page.evaluate(JS_COLLECT, [SEL["song_link"], scroll])
+        if r.get("switched") and songs:
+            log.debug("the list is another box: %d songs read before were not the list's", len(songs))
+            songs, streak, last_height, sweeps, swept_new = {}, 0, -1, 0, 0
         new = 0
         for sid, text in r["songs"]:
             if sid not in songs:
@@ -459,26 +575,62 @@ def list_songs(page, url, log, known=None, known_in_a_row=None, limit_minutes=20
             log.info("Đọc tới bài thứ %d thì gặp %d bài liền đã tải từ trước: dừng đọc danh sách (các bài phía dưới "
                      "đã tải rồi; muốn đọc hết thì thêm --full)", len(songs), streak)
             break
+        if sweeps:
+            swept_new += new
+        # (a list that draws its rows as they come: never scrolled past rows still loading, few song links in sight)
+        in_view = max(in_view, r.get("inView", 0))
+        if new or r["bottom"] or r.get("inView", 0) >= max(1, in_view // 2):
+            held, scroll = None, True
+        else:
+            held = held or time.monotonic()
+            scroll = time.monotonic() - held >= HOLD_SECONDS
+            if scroll:
+                held = None
         if len(songs) >= last_logged + 50:
             last_logged = len(songs) - len(songs) % 50
             log.info("Đã đọc %d bài...", len(songs))
-        if new or r["height"] != last_height:
-            quiet, last_height = 0, r["height"]
-        elif r["bottom"]:
-            quiet += 1
-        if quiet >= 3:  # at the end and nothing new after three looks: the next page, if there is one
+        if new or r["height"] != last_height or not r["bottom"]:
+            stalled, nudged, last_height = None, False, r["height"]
+        elif stalled is None:
+            stalled = time.monotonic()
+        elif not nudged and time.monotonic() - stalled >= 1:
+            page.evaluate(JS_SCROLL, "back")  # (rows loaded on reaching the end: asked for again)
+            nudged = True
+        waited = time.monotonic() - stalled if stalled is not None else 0
+        if stalled is not None and nudged and (
+                (waited >= LIST_END_QUIET and net.quiet(LIST_END_QUIET)) or waited >= LIST_END_MAX):
+            # the end of the list (or of this page of it): read it again from the top, rows drawn late are missed once
+            if sweeps < SWEEPS and (sweeps == 0 or swept_new):
+                if sweeps and swept_new:
+                    log.info("Đọc lại danh sách từ đầu: thêm %d bài (trang tải chậm)", swept_new)
+                sweeps, swept_new = sweeps + 1, 0
+                page.evaluate(JS_SCROLL, "top")
+                stalled, nudged = None, False
+                page.wait_for_timeout(500)
+                continue
+            if swept_new:
+                log.info("Đọc lại danh sách từ đầu: thêm %d bài (trang tải chậm)", swept_new)
             more = next((b for b in page.locator(SEL["next_page"]).all() if _enabled(b)), None)
             if more is None:
                 break
             shown = page.evaluate(JS_SHOWN, SEL["song_link"])
-            more.click()
-            # suno.com's Create page keeps Next page enabled on its last page, where a click changes nothing
-            if not _poll(page, lambda: page.evaluate(JS_SHOWN, SEL["song_link"]) != shown, 10_000, 250):
+            if not _press(more, 10_000):
+                break
+            clicked = time.monotonic()
+            changed = False
+            while time.monotonic() - clicked < NEXT_PAGE_WAIT:
+                if page.evaluate(JS_SHOWN, SEL["song_link"]) != shown:
+                    changed = True
+                    break
+                # suno.com's Create page keeps Next page enabled on its last page, where a click changes nothing
+                if time.monotonic() - clicked >= NEXT_PAGE_QUIET and net.quiet(2):
+                    break
+                page.wait_for_timeout(250)
+            if not changed:
                 log.debug("Next page changed nothing: the end of the list")
                 break
-            page.evaluate("() => { const b = document.querySelector('[data-bokin-list]') || document.scrollingElement; "
-                          "b.scrollTop = 0; }")
-            quiet = 0
+            page.evaluate(JS_SCROLL, "top")
+            stalled, nudged, sweeps, swept_new, last_height = None, False, 0, 0, -1
         page.wait_for_timeout(350 if new and not r["bottom"] else 700)  # quicker while songs keep coming
     else:
         log.warning("Đọc danh sách quá %d phút, dừng ở %d bài", limit_minutes, len(songs))
@@ -523,11 +675,24 @@ class Catcher:
         """Nothing asked for or answered for `seconds`, no request waiting for its answer."""
         return not self.open and time.monotonic() - self.net_at >= seconds
 
-    def reset(self):
+    def reset(self, page=None):
+        """Before a song: no file of the songs before it is taken for this one (a tab Suno opened at an audio file and
+        left open is closed; the tool's own page, if at one, is only not taken)."""
         self.downloads.clear()
+        self.stale = set()
+        for p in list(self.context.pages):
+            if AUDIO_URL_RE.search(urlparse(p.url).path):
+                try:
+                    if p is page:
+                        raise RuntimeError("the tool's page")
+                    p.close()
+                except Exception:
+                    self.stale.add(p.url)
 
     def audio_tab(self, fmt):
         for p in self.context.pages:
+            if p.url in getattr(self, "stale", ()):
+                continue
             m = AUDIO_URL_RE.search(urlparse(p.url).path)
             if m and m.group(1).lower() == fmt:
                 return p
@@ -555,31 +720,39 @@ def song_lyrics(page):
         return ""
 
 
+# A Follow button by the song's title (its text's own extent, not the whole width of its heading), or anywhere when
+# the page shows no title: read in one look (a song page has many buttons: its Similar column, comments)
+JS_FOLLOW_BY_TITLE = r"""([titleSel, follow]) => {
+  const re = new RegExp(follow, 'i');
+  const shown = (el) => { const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden'; };
+  const title = [...document.querySelectorAll(titleSel)].find(shown);
+  let box = null;
+  if (title) { const range = document.createRange(); range.selectNodeContents(title);
+    box = range.getBoundingClientRect(); if (!box.width) box = title.getBoundingClientRect(); }
+  for (const b of document.querySelectorAll('button, [role="button"]')) {
+    if (!shown(b)) continue;
+    const label = (b.innerText || '').replace(/\s+/g, ' ').trim() || b.getAttribute('aria-label') || '';
+    if (!re.test(label)) continue;
+    if (!box) return true;
+    const at = b.getBoundingClientRect();
+    if (box.y - 40 <= at.y && at.y <= box.y + box.height + 260
+        && box.x - 80 <= at.x && at.x <= box.x + Math.max(box.width, 300) + 500) return true;
+  }
+  return false;
+}"""
+
+
 def _someone_elses(page):
-    """Is this song page someone else's song? suno.com puts a Follow button by the artist's name, under the song's
-    title, on other people's songs only. Only buttons near the title count (a list of other songs on the page may
-    have its own)."""
-    title = page.locator(SEL["song_title"]).first
+    """Does this song page show a Follow button by the artist's name, under the song's title? (suno.com shows one on
+    other people's songs, and at times on the account's own: _open_format_item asks the ⋯ menu first.) Only buttons
+    near the title count (a list of other songs on the page may have its own)."""
     try:
-        box = title.bounding_box() if _visible(title) else None
-    except Exception:
-        box = None
-    for b in page.locator('button, [role="button"]').all():
-        if not _visible(b):
-            continue
-        label = _text(b) or (b.get_attribute("aria-label") or "")
-        if not SEL["text_follow"].search(label):
-            continue
-        if box is None:
-            return True
-        try:
-            at = b.bounding_box()
-        except Exception:
-            at = None
-        if at and box["y"] - 40 <= at["y"] <= box["y"] + box["height"] + 260 and \
-                box["x"] - 80 <= at["x"] <= box["x"] + max(box["width"], 300) + 500:
-            return True
-    return False
+        return bool(page.evaluate(JS_FOLLOW_BY_TITLE, [SEL["song_title"], SEL["text_follow"].pattern]))
+    except Exception as e:
+        if "has been closed" in str(e):
+            raise
+        return False
 
 
 def _dialog_format(page, fmt):
@@ -598,10 +771,7 @@ def _chosen(row):
     """Is this row of the download box chosen? Its aria-checked / aria-pressed... when it has one, else its check
     mark (suno.com, October 2026: a chosen row shows one, the others none)."""
     for name in ("aria-checked", "aria-selected", "aria-pressed", "data-state", "data-selected", "data-checked"):
-        try:
-            value = row.get_attribute(name)
-        except Exception:
-            value = None
+        value = _attr(row, name)
         if value is not None:
             return value.lower() in ("true", "checked", "on", "active", "selected", "")
     try:
@@ -637,9 +807,17 @@ def _pick_format(page, fmt):
             return
         row = mine[0] if not _chosen(mine[0]) else others[0]
         was = _chosen(row)
-        row.click()
-        _poll(page, lambda: _chosen(row) != was, 2000)
+        if _press(row):
+            _poll(page, lambda: _chosen(row) != was, 2000)
+        else:
+            page.wait_for_timeout(500)
     raise SunoError("stuck", f"Không chọn được riêng dòng {fmt.upper()} trong hộp Download của Suno")
+
+
+# Seconds Suno's download box has to open once Download is clicked (a slow page took more than 5: the menu was opened
+# again under the box, "TimeoutError: Timeout 30000ms exceeded", the owner's playlist, 01/11/2026)
+BOX_WAIT_MS = 20_000
+_seen = {"box": False}  # this run's songs opened the download box (no submenu to wait for)
 
 
 def _menu_says_mine(page):
@@ -674,9 +852,16 @@ def _open_format_item(page, fmt, others=False):
         down = _find_text(page, SEL["menu_item"], SEL["text_download"])
         return ("download", down) if down else None
 
-    for _ in range(3):  # a click before the page is ready does nothing: open the menu again
-        more.click()
-        kind, loc = _poll(page, menu, 3000) or (None, None)
+    for attempt in range(3):  # a click before the page is ready does nothing: open the menu again
+        if attempt:  # the download box opened after the last pass gave up on it: it is used, not covered over
+            item = format_anywhere()
+            if item:
+                return item
+        if not _press(more, 10_000):  # (a box or menu still closing covers it)
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(500)
+            continue
+        kind, loc = _poll(page, menu, 5000) or (None, None)
         if kind and not others and not _menu_says_mine(page) and _someone_elses(page):
             page.keyboard.press("Escape")
             raise SunoError("not_mine", "Bài của tài khoản khác (menu ⋯ không có Publish / Move to Trash, cạnh tên "
@@ -688,11 +873,13 @@ def _open_format_item(page, fmt, others=False):
         if kind == "download":
             if not _enabled(loc):
                 raise SunoError("not_ready", "Suno chưa cho tải bài này (bài chưa tạo xong hoặc bị lỗi)")
-            loc.hover()
-            item = _poll(page, format_item, 1500)
-            if not item:
-                loc.click()  # (the download box opens on a click)
-                item = _poll(page, format_anywhere, 5000)
+            item = None
+            if not _seen["box"] and _press(loc, hover=True):  # the older menu: Download opens a submenu
+                item = _poll(page, format_item, 1500)
+            if not item and _press(loc):  # the download box opens on a click, at times slowly
+                item = _poll(page, format_anywhere, BOX_WAIT_MS)
+                if item is not None and _dialog_format(page, fmt) is not None:
+                    _seen["box"] = True
             if item:
                 return item
         page.keyboard.press("Escape")
@@ -700,27 +887,47 @@ def _open_format_item(page, fmt, others=False):
     raise SunoError("stuck", f"Không thấy mục Download → {fmt.upper()} trong menu của bài hát")
 
 
-def _answer_dialog(page, clicked, title=""):
-    """Suno's download box: presses its Download button once it is ready. Never presses anything in a box that
-    offers to buy or upgrade; such a box, or one saying the downloads are used up, stops the run. (The box's text is
-    read without the song's title: "Download 'Buy Me Love'" offers nothing.)"""
+def _download_box(box, go):
+    """Is this dialog Suno's download box (its Download button, its format rows, "Download 'title'")?"""
+    return bool(go) or any(SEL["text_dialog_row"].search(_text(r))
+                           for r in box.locator(SEL["dialog_option"]).all() if _visible(r))
+
+
+OTHER_BOX_SECONDS = 15  # another box offering to buy (a promotion) stops the run only if it stays this long, no file
+
+
+def _answer_dialog(page, clicked, titles=()):
+    """Suno's download box: presses its Download button once it is ready (once each: again only after a minute with
+    no file). Never presses anything in a box that offers to buy or upgrade; such a box, or one saying the downloads
+    are used up, stops the run. (The box's text is read without the song's title, as the list showed it and as its
+    page does: "Download 'Buy Me Love'" offers nothing.) Another box (not the download box) offering to buy stops the
+    run only when it stays."""
+    if isinstance(titles, str):
+        titles = (titles,)
     for box in page.locator(SEL["dialog"]).all():
         if not _visible(box):
             continue
-        text = _without(_text(box), title)
+        text = _text(box)
+        for title in titles:
+            text = _without(text, title)
         go = []
         for b in box.locator(SEL["dialog_button"]).all():
-            label = _text(b) or (b.get_attribute("aria-label") or "")
+            label = _label(b)
             if SEL["text_go"].search(label):
                 go.append((label, b))
+        if not _download_box(box, go):
+            if SEL["text_buy"].search(text) or SEL["text_none_left"].search(text):
+                since = clicked.setdefault("(other box)", time.monotonic())
+                if time.monotonic() - since >= OTHER_BOX_SECONDS:
+                    raise SunoError("limit", f"Suno báo: \"{text[:160]}\". Tool dừng, không mua thêm")
+            continue
         if SEL["text_none_left"].search(text):
             raise SunoError("limit", "Hộp Download của Suno ghi Downloads 0: hết lượt tải của gói (tới ngày làm mới "
                                      "ghi trong hộp). Tool dừng, không bấm gì")
         if SEL["text_buy"].search(text) or (SEL["text_limit"].search(text) and not go):
             raise SunoError("limit", f"Suno báo hết lượt tải của gói: \"{text[:160]}\". Tool dừng, không mua thêm")
         for label, b in go:
-            if _enabled(b) and time.monotonic() - clicked.get(label, 0) > 10:
-                b.click()
+            if _enabled(b) and time.monotonic() - clicked.get(label, -1e9) > 60 and _press(b):
                 clicked[label] = time.monotonic()
                 return
 
@@ -729,7 +936,7 @@ def download_song(page, catcher, song, fmt, dest, log, timeout_seconds=300, othe
     """Downloads one song through its page's Download button into `dest`. Returns (the title the page shows, the
     lyrics it shows or "")."""
     page.goto(song.link, wait_until="domcontentloaded", timeout=90_000)
-    catcher.reset()
+    catcher.reset(page)
     try:
         item = _open_format_item(page, fmt, others)
     except SunoError as e:
@@ -738,15 +945,16 @@ def download_song(page, catcher, song, fmt, dest, log, timeout_seconds=300, othe
         if e.code == "stuck" and page_state(page, wait_seconds=5)[0] != "in":
             raise SunoError("not_signed_in", "Tài khoản Suno đã bị đăng xuất. Chạy lại: suno login <tên>")
         raise
-    title = song.title or _song_title(page)
+    shown = _song_title(page)
+    title = song.title or shown
     lyrics = song_lyrics(page)
     if not _enabled(item):
         raise SunoError("not_ready", f"Suno chưa cho tải bài này dạng {fmt.upper()} (bài chưa tạo xong hoặc bị lỗi)")
     if _dialog_format(page, fmt) is not None:  # the download box: a click on a row chooses or unchooses it
         _pick_format(page, fmt)
         page.wait_for_timeout(300)
-    else:
-        item.click()
+    elif not _press(item, 10_000):
+        raise SunoError("stuck", f"Không bấm được mục {fmt.upper()} trong menu Download của bài hát")
     clicked = {}
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
@@ -760,16 +968,19 @@ def download_song(page, catcher, song, fmt, dest, log, timeout_seconds=300, othe
             break
         tab = catcher.audio_tab(fmt)
         if tab:  # Suno opened the file itself instead of downloading it: take the same file
-            r = page.context.request.get(tab.url, timeout=timeout_seconds * 1000)
-            if not r.ok:
-                raise SunoError("stuck", f"Không lấy được file {fmt.upper()} (HTTP {r.status})")
-            dest.write_bytes(r.body())
-            if tab is page:
-                page.go_back()
-            else:
-                tab.close()
+            try:
+                r = page.context.request.get(tab.url, timeout=timeout_seconds * 1000)
+                if not r.ok:
+                    raise SunoError("stuck", f"Không lấy được file {fmt.upper()} (HTTP {r.status})")
+                dest.write_bytes(r.body())
+            finally:  # (never left open: the next song would take it for its own)
+                with contextlib.suppress(Exception):
+                    if tab is page:
+                        page.go_back(timeout=30_000)
+                    else:
+                        tab.close()
             break
-        _answer_dialog(page, clicked, title)
+        _answer_dialog(page, clicked, (song.title, shown))
         page.wait_for_timeout(250)
     else:
         raise SunoError("stuck", f"Đã bấm tải {fmt.upper()} nhưng sau {timeout_seconds} giây vẫn chưa nhận được file")
@@ -1103,7 +1314,7 @@ def download_stems(page, catcher, song, dest, log, files=STEM_FILES, tempo="foll
             raise SunoError("stopped", "Đã dừng theo yêu cầu. Chạy lại để tải tiếp các bài còn thiếu")
 
     page.goto(song.link, wait_until="domcontentloaded", timeout=90_000)
-    catcher.reset()
+    catcher.reset(page)
     saved, first = [], 0
     try:
         try:

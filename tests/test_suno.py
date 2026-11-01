@@ -50,6 +50,18 @@ def read_list(folder):
         return list(csv.DictReader(f))
 
 
+def write_old_note(folder, song_id):
+    """The note an older version wrote for a song it took for someone else's by its Follow button alone."""
+    rows = read_list(folder)
+    for r in rows:
+        if r["id"] == song_id and r["trang_thai"] == "nguoi_khac":
+            r["ghi_chu"] = "Bài của người khác (cạnh tên bài có nút Follow): bỏ qua, không bấm tải"
+    with open(folder / "danh-sach.csv", "w", encoding="utf-8-sig", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=list(rows[0]))
+        w.writeheader()
+        w.writerows(rows)
+
+
 def main():
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     ap = argparse.ArgumentParser()
@@ -252,8 +264,10 @@ def main():
         check(len(fake.picked) == picked and len(fake.counted) == counted, "nothing pressed, no download used")
         row = [r for r in read_list(nhac) if r["id"] == theirs]
         check(row and row[0]["trang_thai"] == "nguoi_khac", "listed as someone else's song")
-        cli("download", "suno1", link, "--out", str(nhac), contains="1 bài lần trước ghi là của người khác: xem lại")
-        check(len(fake.picked) == picked and len(fake.counted) == counted, "looked at again, still nothing pressed")
+        check("menu ⋯" in row[0]["ghi_chu"] and "[tài khoản suno1]" in row[0]["ghi_chu"], row[0]["ghi_chu"])
+        out = cli("download", "suno1", link, "--out", str(nhac), contains="1 bài của tài khoản khác (đã xem ở lần trước)")
+        check(len(fake.picked) == picked and len(fake.counted) == counted and "Tổng: 0 bài tải xong, 0 bài lỗi, 1 bài "
+              "của người khác" in out, "not opened again, still counted as skipped")
         code = fake.add_share(fake.similar[0])
         cli("download", "suno1", f"{fake.url}/s/{code}", "--out", str(tmp / "chia-se"),
             contains="1 bài của người khác (bỏ qua)")
@@ -264,9 +278,11 @@ def main():
         own = fake.add_song("Của mình có Follow")
         cli("download", "suno1", link, "--out", str(nhac), contains="1 bài tải xong")
         check(own in fake.counted, "downloaded")
-        print("== a song written down as someone else's by mistake: downloaded on the next run, the row corrected")
-        fake.songs[theirs]["owner"] = "me"  # (as the owner's songs the app took for someone else's)
-        cli("download", "suno1", link, "--out", str(nhac), contains="1 bài tải xong")
+        print("== a song an older version took for someone else's (the owner's playlist, 01/11/2026): looked at again "
+              "on the next run, downloaded, the row corrected")
+        fake.songs[theirs]["owner"] = "me"
+        write_old_note(nhac, theirs)
+        cli("download", "suno1", link, "--out", str(nhac), contains="1 bài lần trước ghi là của người khác: xem lại")
         rows = [r for r in read_list(nhac) if r["id"] == theirs]
         check(theirs in fake.counted and [r["trang_thai"] for r in rows] == ["xong"], f"downloaded, {rows}")
         fake.config["follow_on_own"] = False
