@@ -820,9 +820,14 @@ def _pick_format(page, fmt):
 
 # Seconds Suno's download box has to open once Download is clicked (a slow page took more than 5: the menu was opened
 # again under the box, "TimeoutError: Timeout 30000ms exceeded", the owner's playlist, 01/11/2026)
-BOX_WAIT_MS = 20_000
+BOX_WAIT_MS = 30_000
 MENU_TRIES = 6  # ⋯ clicked again while its menu does not open (a slow song page: half a minute)
 _seen = {"box": False}  # this run's songs opened the download box (no submenu to wait for)
+
+
+def _menu_open(page):
+    """Is a ⋯ menu showing (items one can see)?"""
+    return any(_visible(item) for item in page.locator(SEL["menu_item"]).all())
 
 
 def _menu_says_mine(page):
@@ -857,9 +862,13 @@ def _open_format_item(page, fmt, others=False):
         down = _find_text(page, SEL["menu_item"], SEL["text_download"])
         return ("download", down) if down else None
 
+    # Whose song it is, is read from the ⋯ menu while it is open, once; a download box shown later (opened by a
+    # Download pressed after that) is never read as a menu without the owner's items.
+    checked = others
+    waited = nothing = 0  # the long wait for the box is given once; Download pressed with nothing opening
     for attempt in range(MENU_TRIES):  # a click before the page is ready does nothing: open the menu again
         if attempt:  # the download box opened after the last pass gave up on it: it is used, not covered over
-            item = format_anywhere()
+            item = _dialog_format(page, fmt)
             if item:
                 return item
         if not _press(more, 10_000):  # (a box or menu still closing covers it)
@@ -867,24 +876,33 @@ def _open_format_item(page, fmt, others=False):
             page.wait_for_timeout(500)
             continue
         kind, loc = _poll(page, menu, 5000) or (None, None)
-        if kind and not others and not _menu_says_mine(page) and _someone_elses(page):
-            page.keyboard.press("Escape")
-            raise SunoError("not_mine", "Bài của tài khoản khác (menu ⋯ không có Publish / Move to Trash, cạnh tên "
-                                        "bài có nút Follow): bỏ qua, không bấm tải. Muốn tải: tick ô \"Tải cả bài "
-                                        "của tài khoản khác\" (dòng lệnh: --others), mỗi bài tốn một lượt tải "
-                                        "của gói")
-        if kind == "item":
+        if kind and not checked and _menu_open(page):
+            if not _menu_says_mine(page) and _someone_elses(page):
+                page.keyboard.press("Escape")
+                raise SunoError("not_mine", "Bài của tài khoản khác (menu ⋯ không có Publish / Move to Trash, cạnh "
+                                            "tên bài có nút Follow): bỏ qua, không bấm tải. Muốn tải: tick ô \"Tải "
+                                            "cả bài của tài khoản khác\" (dòng lệnh: --others), mỗi bài tốn một "
+                                            "lượt tải của gói")
+            checked = True
+        if kind == "item" and (checked or _dialog_format(page, fmt) is not None):
             return loc
-        if kind == "download":
+        if kind == "download" and checked:
             if not _enabled(loc):
                 raise SunoError("not_ready", "Suno chưa cho tải bài này (bài chưa tạo xong hoặc bị lỗi)")
             item = None
             if not _seen["box"] and _press(loc, hover=True):  # the older menu: Download opens a submenu
                 item = _poll(page, format_item, 1500)
             if not item and _press(loc):  # the download box opens on a click, at times slowly
-                item = _poll(page, format_anywhere, BOX_WAIT_MS)
+                item = _poll(page, format_anywhere, 5000 if waited else BOX_WAIT_MS)
+                waited += 1
                 if item is not None and _dialog_format(page, fmt) is not None:
                     _seen["box"] = True
+                if item is None and _box_rows(page):  # the box is there, without this format
+                    raise SunoError("stuck", f"Hộp Download của Suno không có dòng {fmt.upper()} cho bài này")
+                if item is None:
+                    nothing += 1
+                    if nothing >= 2:
+                        break
             if item:
                 return item
         page.keyboard.press("Escape")
@@ -898,7 +916,9 @@ def _is_download_box(box, go):
                            for r in box.locator(SEL["dialog_option"]).all() if _visible(r))
 
 
-OTHER_BOX_SECONDS = 15  # another box offering to buy (a promotion) stops the run only if it stays this long, no file
+# another box offering to buy, once the download is pressed (a promotion), stops the run only if it stays this long
+OTHER_BOX_SECONDS = 15
+PRESS_AGAIN_SECONDS = 20  # the download box's button still the same, enabled, no file: pressed again after this
 
 
 def _answer_dialog(page, clicked, titles=()):
@@ -906,9 +926,10 @@ def _answer_dialog(page, clicked, titles=()):
     file). Never presses anything in a box that offers to buy or upgrade; such a box, or one saying the downloads
     are used up, stops the run. (The box's text is read without the song's title, as the list showed it and as its
     page does: "Download 'Buy Me Love'" offers nothing.) Another box (not the download box) offering to buy stops the
-    run only when it stays."""
+    run at once before the press, and only when it stays after it (the file is coming)."""
     if isinstance(titles, str):
         titles = (titles,)
+    boxes, others = [], []
     for box in page.locator(SEL["dialog"]).all():
         if not _visible(box):
             continue
@@ -922,23 +943,30 @@ def _answer_dialog(page, clicked, titles=()):
             label = _label(b)
             if SEL["text_go"].search(label):
                 go.append((label, b))
-        if not _is_download_box(box, go):
-            if SEL["text_buy"].search(text) or SEL["text_none_left"].search(text):
-                since = clicked.setdefault("(other box)", time.monotonic())
-                if time.monotonic() - since >= OTHER_BOX_SECONDS:
-                    raise SunoError("limit", f"Suno báo: \"{text[:160]}\". Tool dừng, không mua thêm")
-            continue
+        (boxes if _is_download_box(box, go) else others).append((text, go))
+    for text, _ in others:
+        if SEL["text_buy"].search(text) or SEL["text_none_left"].search(text) or SEL["text_limit"].search(text):
+            # (alone, before the press: Suno's answer to the download, as the older menu's limit box; beside the
+            # download box, or once the file is coming, maybe a promotion: it has to stay)
+            since = clicked.setdefault("(other box)", time.monotonic())
+            if (not boxes and "(pressed)" not in clicked) or time.monotonic() - since >= OTHER_BOX_SECONDS:
+                raise SunoError("limit", f"Suno báo hết lượt tải của gói: \"{text[:160]}\". Tool dừng, không mua "
+                                         "thêm")
+    for text, go in boxes:
         if SEL["text_none_left"].search(text):
             raise SunoError("limit", "Hộp Download của Suno ghi Downloads 0: hết lượt tải của gói (tới ngày làm mới "
                                      "ghi trong hộp). Tool dừng, không bấm gì")
         if SEL["text_buy"].search(text) or (SEL["text_limit"].search(text) and not go):
             raise SunoError("limit", f"Suno báo hết lượt tải của gói: \"{text[:160]}\". Tool dừng, không mua thêm")
-        # one press for the song: the button may then read "Download" while the file is made, a second file
-        if time.monotonic() - clicked.get("(pressed)", -1e9) <= 60:
+        # one press for the song: the button may then read "Download" while the file is made, a second file. A
+        # press the page did not take (the box unchanged: the same button, still enabled) is made again sooner.
+        since = time.monotonic() - clicked.get("(pressed)", -1e9)
+        same = any(label == clicked.get("(label)") and _enabled(b) for label, b in go)
+        if since <= (PRESS_AGAIN_SECONDS if same else 60):
             return
-        for _, b in go:
+        for label, b in go:
             if _enabled(b) and _press(b):
-                clicked["(pressed)"] = time.monotonic()
+                clicked["(pressed)"], clicked["(label)"] = time.monotonic(), label
                 return
 
 

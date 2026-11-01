@@ -680,7 +680,6 @@ def cmd_download(args, data):
                 stopped = "Đã dừng theo yêu cầu. Chạy lại để tải tiếp các bài còn thiếu"
                 break
             label = f"[{n}/{len(todo)}] {song.title or song.id}"
-            failed_before = out.failed_before(song.id, fmt)
             try:
                 path = download_one(page, catcher, song, fmt, out, label, args.others)
             except Exception as e:
@@ -712,7 +711,7 @@ def cmd_download(args, data):
                     out.add_failure(song, fmt, note)  # tried again on the next run
                 if code != "not_ready":
                     keep_failure(data, page, name)
-                    stuck += 0 if failed_before else 1  # (one that failed before: that song, not Suno's page)
+                    stuck += 1  # (the songs that failed before are tried last: they never keep the others back)
                     if stuck >= STUCK_IN_A_ROW:
                         stopped = (f"{STUCK_IN_A_ROW} bài liền nhau không tải được: có thể Suno đã đổi giao diện. "
                                    f"Gửi các file loi-*.png và loi-*.html trong {data.logs} cho người sửa tool")
