@@ -25,7 +25,7 @@ jobs:
       matrix:
         os: [windows-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 40
+    timeout-minutes: 60  # two end-to-end passes, about 22 minutes each
     steps:
       - uses: actions/checkout@v4
 
