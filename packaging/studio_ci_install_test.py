@@ -6,11 +6,16 @@ packaging/ci_install_test.py of Bokin Suno Master.)
       Suno command line of the installed app runs (suno selftest); setup run again while the app is running closes
       it (BokinSunoStudio.exe --close) and installs over it.
 
+  python packaging/studio_ci_install_test.py move <BokinSunoStudio-Setup-X.exe> <folder>
+      setup run again into another folder (as chosen on its folder page; here /DIR=, silently): the app is there,
+      Settings > Apps and the Start menu point there, the program files in the folder before are gone, the app's data
+      is kept, and the app runs from its new folder.
+
   python packaging/studio_ci_install_test.py update <BokinSunoStudio-Setup-Y.exe> <Y>
       the installed app finds version Y on a stand-in for GitHub (the manifest in the studio-latest release, while
       the API refuses as for an office over its limit of requests, and while the release marked Latest is Bokin Suno
       Master's), downloads and verifies it; "Cập nhật ngay" (POST /api/update/install) installs it and the installer
-      starts the app again, now in version Y.
+      starts the app again, now in version Y, in the folder it was installed in.
 
 No key is activated on the CI machine: the page, the updates and quitting answer before activation.
 """
@@ -25,13 +30,35 @@ import time
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-APP_DIR = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Bokin Suno Studio")
-EXE = os.path.join(APP_DIR, "BokinSunoStudio.exe")
+APP_DIR = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Bokin Suno Studio")  # (setup's default)
+EXE_NAME = "BokinSunoStudio.exe"
+UNINSTALL_KEY = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\{3C9B1E57-2A64-4F0D-9E83-B7D5A1C46F20}_is1"
 DATA = os.path.join(os.environ.get("APPDATA", ""), "Bokin", "SunoStudio")
 LOG = os.path.join(DATA, "app.log")
 RUNNING = os.path.join(DATA, "running.json")
 LOCAL = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 MANIFEST = "bokin-suno-studio-latest.json"
+
+
+def installed_dir():
+    """The folder the app is installed in, as Settings > Apps knows it."""
+    import winreg
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, UNINSTALL_KEY) as key:
+            return winreg.QueryValueEx(key, "Inno Setup: App Path")[0]
+    except OSError:
+        return APP_DIR
+
+
+def exe():
+    return os.path.join(installed_dir(), EXE_NAME)
+
+
+def shortcut_target(path):
+    r = subprocess.run(["powershell", "-NoProfile", "-Command",
+                        f"(New-Object -ComObject WScript.Shell).CreateShortcut('{path}').TargetPath"],
+                       capture_output=True, text=True)
+    return r.stdout.strip()
 
 
 def running():
@@ -79,8 +106,8 @@ def wait(test, seconds, what):
     stop(what)
 
 
-def setup(installer):
-    code = subprocess.run([installer, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"]).returncode
+def setup(installer, *args):
+    code = subprocess.run([installer, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", *args]).returncode
     if code != 0:
         stop(f"setup ended with code {code}")
 
@@ -89,20 +116,20 @@ def start_app(update_api, update_site=None):
     env = dict(os.environ, BOKIN_NO_BROWSER="1", BOKIN_UPDATE_API=update_api)
     if update_site:
         env["BOKIN_UPDATE_SITE"] = update_site
-    return subprocess.Popen([EXE], env=env)
+    return subprocess.Popen([exe()], env=env)
 
 
 def install(installer):
     setup(installer)
-    if not os.path.exists(EXE):
-        stop(f"not installed: {EXE}")
+    if not os.path.exists(exe()):
+        stop(f"not installed: {exe()}")
     for part in ("loi-dong-am/index.html", "loi-dong-am/engine.js", "suno/bokin_suno.py",
                  "bokin_suno/static/index.html"):
-        if not os.path.exists(os.path.join(APP_DIR, "_internal", part)):
+        if not os.path.exists(os.path.join(installed_dir(), "_internal", part)):
             stop(f"not installed: _internal/{part}")
     print("ok: Lời Đồng Âm, the Suno downloader and the Master page are installed", flush=True)
     out = os.path.join(tempfile.mkdtemp(), "suno.txt")
-    r = subprocess.run([EXE, "suno", "--data", os.path.join(tempfile.mkdtemp(), "d"), "selftest"],
+    r = subprocess.run([exe(), "suno", "--data", os.path.join(tempfile.mkdtemp(), "d"), "selftest"],
                        env=dict(os.environ, BOKIN_STUDIO_OUTPUT=out), timeout=300)
     text = open(out, encoding="utf-8", errors="replace").read() if os.path.exists(out) else ""
     print(text.strip())
@@ -117,6 +144,37 @@ def install(installer):
     wait(lambda: (call("/api/license") or {}).get("licensed") is False, 10, "it asks for a key (activation screen)")
     setup(installer)
     wait(lambda: app.poll() is not None, 20, "setup closed the running app before installing over it")
+
+
+def move(installer, folder):
+    before = installed_dir()
+    if not os.path.exists(os.path.join(before, EXE_NAME)):
+        stop(f"not installed before the move: {before}")
+    app = start_app("http://127.0.0.1:9/none")  # (running: setup closes it, from its old folder)
+    wait(lambda: (call("/api/ping") or {}).get("app") == "bokin-suno-studio", 60, "the installed app answers")
+    setup(installer, f"/DIR={folder}")
+    wait(lambda: app.poll() is not None, 20, "setup closed the app running from the folder before")
+    if os.path.normcase(os.path.normpath(installed_dir())) != os.path.normcase(os.path.normpath(folder)):
+        stop(f"Settings > Apps says {installed_dir()}, not {folder}")
+    if not os.path.exists(os.path.join(folder, EXE_NAME)) or \
+            not os.path.exists(os.path.join(folder, "_internal", "suno", "bokin_suno.py")):
+        stop(f"not installed in {folder}")
+    print("ok: installed in the folder chosen,", folder, flush=True)
+    if os.path.exists(os.path.join(before, EXE_NAME)) or os.path.exists(os.path.join(before, "_internal")):
+        stop(f"the program files are still in the folder before: {before}")
+    print("ok: the program files of the folder before are gone", flush=True)
+    link = os.path.join(os.environ["APPDATA"], "Microsoft", "Windows", "Start Menu", "Programs",
+                        "Bokin Suno Studio.lnk")
+    target = shortcut_target(link)
+    if os.path.normcase(target) != os.path.normcase(os.path.join(folder, EXE_NAME)):
+        stop(f"the Start menu shortcut points to {target!r}")
+    print("ok: the Start menu shortcut points to the new folder", flush=True)
+    if not os.path.isdir(DATA):
+        stop(f"the app's data folder is gone: {DATA}")
+    app = start_app("http://127.0.0.1:9/none")
+    wait(lambda: (call("/api/ping") or {}).get("app") == "bokin-suno-studio", 60, "the app runs from its new folder")
+    call("/api/quit", {})
+    wait(lambda: app.poll() is not None, 20, "the app quit")
 
 
 def fake_github(installer, version, port):
@@ -165,6 +223,7 @@ def fake_github(installer, version, port):
 
 
 def update(installer, version):
+    folder = installed_dir()
     fake = fake_github(installer, version, 8798)
     app = start_app("http://127.0.0.1:8798/limited", "http://127.0.0.1:8798/site")
     wait(lambda: (call("/api/update") or {}).get("ready"), 180,
@@ -175,6 +234,10 @@ def update(installer, version):
         stop("the page could not start the update")
     wait(lambda: app.poll() is not None, 30, "the app closed for the update")
     wait(lambda: (call("/api/ping") or {}).get("version") == version, 240, f"the app runs again, in version {version}")
+    if not os.path.exists(os.path.join(folder, EXE_NAME)) or \
+            os.path.normcase(os.path.normpath(installed_dir())) != os.path.normcase(os.path.normpath(folder)):
+        stop(f"the update did not stay in {folder} (Settings > Apps: {installed_dir()})")
+    print("ok: the update installed in the app's folder,", folder, flush=True)
     call("/api/quit", {})
     fake.shutdown()
 
@@ -183,6 +246,8 @@ if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     if len(sys.argv) >= 3 and sys.argv[1] == "install":
         install(os.path.abspath(sys.argv[2]))
+    elif len(sys.argv) >= 4 and sys.argv[1] == "move":
+        move(os.path.abspath(sys.argv[2]), os.path.abspath(sys.argv[3]))
     elif len(sys.argv) >= 4 and sys.argv[1] == "update":
         update(os.path.abspath(sys.argv[2]), sys.argv[3])
     else:

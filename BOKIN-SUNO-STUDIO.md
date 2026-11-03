@@ -40,7 +40,23 @@ Một vòng làm việc: **tải bài về → xem lời → đổi lời → ch
 2. Ở mục **Assets**, tải file **BokinSunoStudio-Setup.exe**.
 3. Bấm đúp file vừa tải để cài. **Không cần quyền quản trị.**
    - Nếu Windows hiện "Windows protected your PC": bấm **More info** → **Run anyway** (bộ cài chưa có chữ ký số).
-4. Mở **Bokin Suno Studio** từ Desktop hoặc menu Start.
+4. Trang **Select Destination Location** (chọn nơi cài app): mặc định là
+   `C:\Users\<tên bạn>\AppData\Local\Programs\Bokin Suno Studio`. Muốn cài ổ khác: bấm **Browse...**, chọn ổ hoặc
+   thư mục (ví dụ ổ **D:**), bấm **OK**: bộ cài tự thêm `Bokin Suno Studio` vào cuối (ví dụ
+   `D:\Bokin Suno Studio`). Bấm **Next**.
+   - Không chọn được gốc ổ đĩa (`D:\`) hoặc thư mục cần quyền quản trị (như `C:\Program Files`): bộ cài báo và cho
+     chọn lại.
+5. Mở **Bokin Suno Studio** từ Desktop hoặc menu Start.
+
+### Chuyển app sang ổ khác (đã cài rồi)
+
+1. Đóng app (đang tải nhạc hoặc master thì chờ xong).
+2. Chạy lại **BokinSunoStudio-Setup.exe**, ở trang chọn nơi cài bấm **Browse...** và chọn chỗ mới.
+3. Bộ cài cài app vào chỗ mới, sửa lối tắt ở Desktop và menu Start, rồi **xoá các file app ở chỗ cũ**.
+
+- Tài khoản Suno, key kích hoạt, cài đặt và các bài đã master **không mất**: chúng nằm ở
+  `%APPDATA%\Bokin\SunoStudio` và thư mục nhạc bạn đã chọn, không nằm trong thư mục cài app.
+- Các lần **tự cập nhật** sau cài vào đúng chỗ bạn đã chọn.
 
 ### Kích hoạt (lần đầu)
 

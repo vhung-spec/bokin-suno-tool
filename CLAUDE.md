@@ -116,6 +116,12 @@
   Phần đã khử chuyển tại chỗ (các file phát cùng lúc, bản không nghe bị tắt tiếng), dạng sóng `/api/peaks/...`, nghe
   cùng độ to. Phần này sửa trong `bokin_suno/` (trang, `app.py`, `master.py`) trên nhánh Studio: app Bokin Suno Master
   (nhánh của nó) chưa có, chủ muốn thì chép commit đó sang.
+- Bộ cài (`packaging/BokinSunoStudio.iss`, chủ yêu cầu 03/11/2026): có trang chọn nơi cài (mặc định
+  `%LOCALAPPDATA%\Programs\Bokin Suno Studio`, lần sau là chỗ đã chọn; tự cập nhật chạy im lặng giữ chỗ đó). Thư mục
+  phải ghi được không cần quyền quản trị, không phải gốc ổ đĩa (`DirProblem`). Cài lại vào chỗ khác: đóng bản đang
+  chạy ở chỗ cũ, rồi xoá file app ở chỗ cũ (`CurStepChanged`, chỉ `BokinSunoStudio.exe`, `_internal`, `unins000.*`).
+  Dữ liệu app (`%APPDATA%\Bokin\SunoStudio`) vẫn ở ổ C. CI: `studio_ci_install_test.py move` cài sang `D:\Bokin
+  Apps\Bokin Suno Studio`, bước cập nhật sau đó phải ở lại đó.
 - Bokin License: sản phẩm `suno-studio`, bit 8 (đã thêm vào `vhung-spec/Bokin-License`, `bokin_license/` chép lại).
 - **Không làm hỏng tự cập nhật của app master:** app master đọc bản phát hành "Latest" của repo này. Bản phát hành
   của Studio luôn `--latest=false`: tag `studio-v<phiên bản>`, và bản `studio-latest` giữ

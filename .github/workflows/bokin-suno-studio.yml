@@ -79,6 +79,9 @@ jobs:
       - name: Install test (fresh install, the app answers, its Suno side runs, then setup again while it runs)
         run: python packaging/studio_ci_install_test.py install dist/BokinSunoStudio-Setup-${{ env.APP_VERSION }}.exe
 
+      - name: Another folder (setup again into a folder on drive D, as chosen on its folder page; the update after stays there)
+        run: python packaging/studio_ci_install_test.py move dist/BokinSunoStudio-Setup-${{ env.APP_VERSION }}.exe "D:\Bokin Apps\Bokin Suno Studio"
+
       - name: Build a next version (only for the update test, never published)
         shell: pwsh
         run: |
