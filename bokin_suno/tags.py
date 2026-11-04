@@ -5,9 +5,9 @@ link to the song on Suno, cover art, the software, dates) comes along. What the 
 too: the PEAK chunk libsndfile writes into float WAVs (it holds the time of writing), the encoder's name in
 FLAC's comment block, any tag an MP3 encoder writes. Then the file gets one tag, the title:
 
-- WAV: a LIST/INFO chunk with INAM (UTF-8, as libsndfile and ffmpeg write it), and the same title in an "id3 "
-  chunk (an ID3v2.3 tag): Windows Explorer reads INFO in the old ANSI code page, so letters with accents came out
-  garbled there
+- WAV: a LIST/INFO chunk with INAM (UTF-8, as libsndfile and ffmpeg write it). Windows Explorer reads INFO in the
+  ANSI code page, so it shows letters with accents garbled; it reads no "id3 " chunk in a WAV either (both seen on
+  Windows in CI), and an INFO in the ANSI code page would be garbled everywhere else
 - FLAC: a VORBIS_COMMENT block with TITLE= and no vendor string
 - MP3: an ID3v2.3 tag with TIT2 (UTF-16, which Windows Explorer shows)
 
@@ -104,8 +104,6 @@ def _wav(src, out, size: int, title: str) -> None:
         text = title.encode("utf-8") + b"\0"
         inam = b"INAM" + struct.pack("<I", len(text)) + text + b"\0" * (len(text) & 1)
         out.write(b"LIST" + struct.pack("<I", 4 + len(inam)) + b"INFO" + inam)
-        id3 = _id3(title)
-        out.write(b"id3 " + struct.pack("<I", len(id3)) + id3 + b"\0" * (len(id3) & 1))
     end = out.tell()
     out.seek(4)
     out.write(struct.pack("<I", end - 8))

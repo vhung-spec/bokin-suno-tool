@@ -3,6 +3,7 @@ import shutil
 import struct
 import subprocess
 import sys
+import warnings
 
 import numpy as np
 import pytest
@@ -38,11 +39,6 @@ def riff_chunks(path, bodies=False):
     return out
 
 
-def riff(chunks):
-    """A RIFF/WAVE file made of (id, body) chunks."""
-    body = b"".join(cid + struct.pack("<I", len(data)) + data + b"\0" * (len(data) & 1) for cid, data in chunks)
-    return b"RIFF" + struct.pack("<I", 4 + len(body)) + b"WAVE" + body
-
 
 def flac_blocks(path):
     b = path.read_bytes()
@@ -76,10 +72,9 @@ def assert_only_title(path, fmt, title=TITLE):
     tit2 = [(b"TIT2", b"\x01\xff\xfe" + title.encode("utf-16-le") + b"\0\0")]
     if fmt == "wav":
         chunks = riff_chunks(path, bodies=True)
-        assert [c for c, _ in chunks if c != b"fact"] == [b"fmt ", b"data", b"LIST", b"id3 "]  # (fact: float WAVs)
+        assert [c for c, _ in chunks if c != b"fact"] == [b"fmt ", b"data", b"LIST"]  # (fact: float WAVs)
         text = title.encode() + b"\0"
-        assert chunks[-2][1] == b"INFOINAM" + struct.pack("<I", len(text)) + text + b"\0" * (len(text) & 1)
-        assert id3_frames(chunks[-1][1]) == tit2
+        assert chunks[-1][1] == b"INFOINAM" + struct.pack("<I", len(text)) + text + b"\0" * (len(text) & 1)
     elif fmt == "flac":
         blocks = flac_blocks(path)
         assert [k for k, _ in blocks] == [0, 4]
@@ -143,8 +138,8 @@ def test_title_of_a_format_libsndfile_cannot_read(tmp_path):
 @pytest.mark.skipif(sys.platform != "win32", reason="what Windows Explorer shows")
 def test_windows_shows_the_title(tmp_path, capsys):
     """Explorer's Title column (System.Title) for each format, with a title in plain letters and one with
-    Vietnamese letters. Also noted, not tested: what it shows for a WAV whose title is only in INFO, only in id3,
-    or in id3 ahead of INFO."""
+    Vietnamese letters. A WAV's Vietnamese title is only noted: Explorer reads RIFF INFO in the ANSI code page
+    (it showed "Ä\x90Ãªm..." for "Đêm..."), and no "id3 " chunk in a WAV (it showed nothing for one)."""
     x = music(2.0)
     plain = "Silent Night (Bossa)"
     files = {}
@@ -152,23 +147,18 @@ def test_windows_shows_the_title(tmp_path, capsys):
         for kind, title in (("plain", plain), ("vi", TITLE)):
             audio_io.save(tmp_path / f"{kind}.{fmt}", x, SR, fmt, 24, title=title)
             files[f"{kind}.{fmt}"] = title
-    chunks = riff_chunks(tmp_path / "vi.wav", bodies=True)
-    sound = [c for c in chunks if c[0] in (b"fmt ", b"data")]
-    info, id3 = dict(chunks)[b"LIST"], dict(chunks)[b"id3 "]
-    variants = {"info-only.wav": sound + [(b"LIST", info)], "id3-only.wav": sound + [(b"id3 ", id3)],
-                "id3-first.wav": sound + [(b"id3 ", id3), (b"LIST", info)]}
-    for name, parts in variants.items():
-        (tmp_path / name).write_bytes(riff(parts))
-    names = list(files) + list(variants)
     out = tmp_path / "shown.txt"
     script = (f"$f = (New-Object -ComObject Shell.Application).Namespace('{tmp_path}'); $r = @(); "
-              + "".join(f"$r += [string]$f.ParseName('{n}').ExtendedProperty('System.Title'); " for n in names)
+              + "".join(f"$r += [string]$f.ParseName('{n}').ExtendedProperty('System.Title'); " for n in files)
               + f"[IO.File]::WriteAllLines('{out}', $r, (New-Object Text.UTF8Encoding $false))")
     subprocess.run(["powershell", "-NoProfile", "-Command", script], check=True, timeout=120)
-    shown = dict(zip(names, out.read_text(encoding="utf-8").splitlines(), strict=True))
+    shown = dict(zip(files, out.read_text(encoding="utf-8").splitlines(), strict=True))
     with capsys.disabled():  # a notice on the CI run: what Explorer shows
         print("\n::notice title=Windows Explorer titles::" + json.dumps(shown, ensure_ascii=True))
     if not shown.get("plain.mp3"):
         pytest.skip(f"this Windows shows no audio titles: {shown}")
     for name, title in files.items():
+        if name == "vi.wav" and shown[name] != title:
+            warnings.warn(f"Windows Explorer shows the WAV title {title!r} as {shown[name]!r}", stacklevel=2)
+            continue
         assert shown[name] == title, (name, shown)

@@ -33,9 +33,13 @@ thẻ tên của bài gốc; nếu bài gốc không có thẻ tên thì lấy t
 trong file: ca sĩ, album, ghi chú (kể cả link bài trên Suno), ảnh bìa, phần mềm, ngày tháng. Thông tin do bộ ghi
 file tự thêm vào cũng được xoá: dấu thời gian trong WAV 32-bit, tên bộ mã hoá trong FLAC. File phần đã khử không
 có thông tin nào.
-- WAV: tên bài nằm trong khối INFO và khối id3. Đây là cùng một tên, ghi ở hai chỗ: Windows Explorer đọc
-  khối INFO theo bảng mã cũ nên chữ có dấu bị vỡ, còn khối id3 giúp Explorer hiện đúng. FLAC: thẻ `TITLE`.
+- WAV: tên bài nằm trong khối INFO (UTF-8, như ffmpeg và các phần mềm làm nhạc vẫn ghi). FLAC: thẻ `TITLE`.
   MP3: thẻ ID3v2.3 `TIT2`.
+- Windows Explorer (cột *Title*, mục *Properties*) hiện đúng tên bài của file MP3 và FLAC, cả khi tên có dấu
+  tiếng Việt. Riêng file WAV, Explorer đọc tên bài theo bảng mã cũ, nên tên **có dấu** sẽ hiện sai dấu
+  trong Explorer. Tên không dấu vẫn hiện đúng, và các phần mềm nghe nhạc, làm nhạc vẫn hiện đúng cả tên có
+  dấu. Cần Explorer hiện đúng tên có dấu thì xuất FLAC hoặc MP3. (Đã kiểm tra trên Windows: Explorer không
+  đọc khối id3 trong WAV, nên không có cách ghi nào khác giúp được.)
 - MP3 vẫn có khung kỹ thuật của bộ mã hoá LAME ("LAME3.100"). Khung này không phải thẻ thông tin: trình phát
   dùng nó để bỏ khoảng lặng bộ mã hoá thêm ở đầu và cuối bài.
 
