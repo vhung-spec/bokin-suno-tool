@@ -50,17 +50,21 @@ def test_page_embeds_token_and_api_needs_it(client):
 def test_master_a_song_end_to_end(client, song, tmp_path):
     settings = client.get("/api/info").json()["presets"]["streaming"]
     settings["eq"]["air"] = 1.0
-    files = {"song": ("../../Bài 1.wav", wav_bytes(song[: SR * 4]), "audio/wav"),
+    files = {"song": ("../../Bài 1 (Bossa).wav", wav_bytes(song[: SR * 4]), "audio/wav"),
              "reference": ("ref.wav", wav_bytes(song[: SR * 4] * 0.5), "audio/wav")}
     res = client.post("/api/jobs", files=files, data={"settings": json.dumps(settings)})
     assert res.status_code == 200, res.text
     job = wait(client, res.json()["id"])
     assert job["state"] == "done", job
-    assert job["song"] == "Bài 1.wav" and job["reference"] == "ref_ref.wav"
+    assert job["song"] == "Bài 1 _Bossa.wav" and job["reference"] == "ref_ref.wav"
     assert set(job["files"]) == {"source", "master", "removed"}
     assert job["report"]["output"]["lufs"] == pytest.approx(-14, abs=0.2)
     audio = client.get(f"/api/files/{job['id']}/{job['files']['master']}")
     assert audio.status_code == 200 and audio.content[:4] == b"RIFF"
+    # its only tag: the title, from the name as uploaded (the saved file lost its brackets)
+    assert job["report"]["title"] == "Bài 1 (Bossa)"
+    with sf.SoundFile(io.BytesIO(audio.content)) as f:
+        assert f.copy_metadata() == {"title": "Bài 1 (Bossa)"}
     dl = client.get(f"/api/files/{job['id']}/{job['files']['master']}?download=true")
     assert "attachment" in dl.headers["content-disposition"]
     assert client.get(f"/api/files/{job['id']}/settings.json").status_code == 404

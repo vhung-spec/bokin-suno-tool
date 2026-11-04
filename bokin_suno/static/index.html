@@ -466,6 +466,7 @@ function notesList(r) {
   if (st.glue && st.glue.max_gr_db) items.push(`Nén: giảm trung bình ${fmt(st.glue.avg_gr_db)} dB, tối đa ${fmt(st.glue.max_gr_db)} dB.`);
   if (st.loudness) items.push(`Độ to: tăng ${fmt(st.loudness.gain_db)} dB; limiter ép tối đa ${fmt(st.loudness.max_gr_db)} dB` +
     ` (${fmt(st.loudness.limited_pct)}% thời lượng).`);
+  if (r.title) items.push(`Thông tin trong file: chỉ có tên bài "${r.title}", mọi thông tin khác đã được xoá.`);
   const warn = (r.notes || []).map((n) => `<li class="warn">${esc(NOTES[n] || n)}</li>`).join("");
   return `<ul class="notes">${items.map((t) => `<li>${esc(t)}</li>`).join("")}${warn}</ul>`;
 }

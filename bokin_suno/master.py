@@ -17,7 +17,7 @@ from typing import Callable
 
 import numpy as np
 
-from bokin_suno import __version__, audio_io
+from bokin_suno import __version__, audio_io, tags
 from bokin_suno.analysis import k_weighted_energy, lufs, lufs_from_energy, measure, \
     true_peak_envelope
 from bokin_suno.clean import CleanSettings, clean
@@ -293,9 +293,11 @@ def output_name(source: Path, settings: Settings) -> str:
 
 def master_file(source: str | Path, out_dir: str | Path, settings: Settings,
                 reference: str | Path | None = None,
-                progress: Progress | None = None) -> Result:
+                progress: Progress | None = None, name: str | None = None) -> Result:
     """Masters one file into out_dir: <name>_master.<fmt>, <name>_removed.wav
-    (when cleaning ran) and <name>_report.json."""
+    (when cleaning ran) and <name>_report.json. The master's only tag is the
+    song's title: the source's title tag, else `name` (the file's name as it
+    was uploaded), else the file name; the removed part carries no tag."""
     source, out_dir = Path(source), Path(out_dir)
     settings.check()
     if progress:
@@ -306,8 +308,9 @@ def master_file(source: str | Path, out_dir: str | Path, settings: Settings,
     sr_out = settings.sample_rate or sr
     if progress:
         progress("write", 0.0)
+    title = tags.source_title(source, name)
     output = audio_io.save(out_dir / output_name(source, settings), y, sr_out,
-                           settings.format, settings.bits)
+                           settings.format, settings.bits, title=title)
     removed_path = None
     if removed is not None and settings.write_removed:
         removed_path = audio_io.save(out_dir / f"{source.stem}_removed.wav", removed, sr_out, "wav", 24)
@@ -319,6 +322,7 @@ def master_file(source: str | Path, out_dir: str | Path, settings: Settings,
     report.update({
         "version": __version__,
         "source": source.name,
+        "title": title,
         "reference": Path(reference).name if reference else None,
         "output_file": output.name,
         "removed_file": removed_path.name if removed_path else None,

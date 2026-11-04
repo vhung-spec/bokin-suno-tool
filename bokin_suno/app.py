@@ -134,8 +134,10 @@ class Jobs:
             with open(d / ref_name, "wb") as f:
                 shutil.copyfileobj(reference.file, f)
             job.reference = ref_name
+        # the name as uploaded: the title tag of a song without one (its file name lost "(", "'", ".")
+        name = Path((song.filename or "").replace("\\", "/")).stem
         (d / SETTINGS_FILE).write_text(json.dumps(
-            {"song": song_name, "reference": job.reference, "settings": settings.to_dict()},
+            {"song": song_name, "name": name, "reference": job.reference, "settings": settings.to_dict()},
             indent=2, ensure_ascii=False), encoding="utf-8")
         self.queue.put(job)
         return job
@@ -155,7 +157,7 @@ class Jobs:
                 result = master_file(job.dir / job.song, job.dir,
                                      Settings.from_dict(info["settings"]),
                                      job.dir / job.reference if job.reference else None,
-                                     progress=progress)
+                                     progress=progress, name=info.get("name"))
                 job.report = result.report
                 job.files = self._files(job)
                 job.state = "done"

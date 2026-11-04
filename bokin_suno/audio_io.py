@@ -16,6 +16,8 @@ import numpy as np
 import soundfile as sf
 from scipy import signal
 
+from bokin_suno import tags
+
 AUDIO_EXTENSIONS = {".wav", ".mp3", ".flac", ".ogg", ".aif", ".aiff",
                     ".m4a", ".aac", ".opus", ".webm", ".mp4"}
 FORMATS = ("wav", "flac", "mp3")
@@ -50,7 +52,7 @@ def _load_with_ffmpeg(path: Path, err: Exception) -> tuple[np.ndarray, int]:
         wav = Path(tmp) / "decoded.wav"
         result = subprocess.run([ffmpeg, "-y", "-loglevel", "error", "-i", str(path),
                                  "-vn", "-c:a", "pcm_f32le", str(wav)],
-                                capture_output=True, text=True)
+                                capture_output=True, text=True, creationflags=tags.NO_WINDOW)
         if result.returncode != 0:
             raise AudioError(f"ffmpeg could not decode {path.name}:\n{result.stderr.strip()}")
         return sf.read(str(wav), dtype="float64", always_2d=True)
@@ -71,9 +73,11 @@ def _pcm16(x: np.ndarray, rng: np.random.Generator) -> np.ndarray:
     return np.clip(np.round(scaled), -32768, 32767).astype(np.int16)
 
 
-def save(path: str | Path, x: np.ndarray, sr: int, fmt: str = "wav", bits: int = 24) -> Path:
+def save(path: str | Path, x: np.ndarray, sr: int, fmt: str = "wav", bits: int = 24,
+         title: str | None = None) -> Path:
     """Writes x to path (written under a temporary name, then renamed, so a
-    failed write never leaves a half file under the real name)."""
+    failed write never leaves a half file under the real name). The file
+    carries no tag but `title`, none at all without one (tags.py)."""
     if fmt not in FORMATS:
         raise AudioError(f"unknown format {fmt!r} (use {', '.join(FORMATS)})")
     path = Path(path)
@@ -96,6 +100,7 @@ def save(path: str | Path, x: np.ndarray, sr: int, fmt: str = "wav", bits: int =
             sf.write(str(partial), x.astype(np.float32), sr, format="WAV", subtype="FLOAT")
         else:
             raise AudioError(f"{fmt.upper()} cannot be written with {bits} bits")
+        tags.keep_only_title(partial, fmt, title)
         os.replace(partial, path)
     finally:
         partial.unlink(missing_ok=True)

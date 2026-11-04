@@ -18,6 +18,7 @@ import urllib.error
 import urllib.request
 
 import numpy as np
+import soundfile as sf
 
 LOCAL = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
@@ -72,6 +73,8 @@ def run() -> int:
             check(f"{name}: report and removed artifacts written",
                   result.removed is not None and result.removed.exists()
                   and (result.output.parent / "Bài thử_report.json").exists())
+            with sf.SoundFile(str(result.output)) as f:
+                check(f"{name}: the file's only tag is its title", f.copy_metadata() == {"title": "Bài thử"})
         _check_server(work, check)
     except Exception:  # noqa: BLE001 - a crash is a failed test, with its traceback in the log
         import traceback

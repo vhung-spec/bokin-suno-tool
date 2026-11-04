@@ -28,6 +28,15 @@ Mỗi bài cho ra ba file:
 - `<tên>_removed.wav`: **phần đã khử** (shimmer, tiếng rít...), để bạn nghe xem công cụ đã bỏ đi những gì;
 - `<tên>_report.json`: số đo trước/sau và việc từng bước đã làm.
 
+**Thông tin trong file (metadata):** bản đã master chỉ mang **một** thông tin là **tên bài**. Tên bài lấy từ
+thẻ tên của bài gốc; nếu bài gốc không có thẻ tên thì lấy tên file. Mọi thông tin khác của bài gốc đều không có
+trong file: ca sĩ, album, ghi chú (kể cả link bài trên Suno), ảnh bìa, phần mềm, ngày tháng. Thông tin do bộ ghi
+file tự thêm vào cũng được xoá: dấu thời gian trong WAV 32-bit, tên bộ mã hoá trong FLAC. File phần đã khử không
+có thông tin nào.
+- WAV: tên bài nằm trong khối INFO, FLAC: thẻ `TITLE`, MP3: thẻ ID3v2.3 `TIT2`.
+- MP3 vẫn có khung kỹ thuật của bộ mã hoá LAME ("LAME3.100"). Khung này không phải thẻ thông tin: trình phát
+  dùng nó để bỏ khoảng lặng bộ mã hoá thêm ở đầu và cuối bài.
+
 ## Cài đặt (Windows)
 
 1. Mở trang **[Bản phát hành mới nhất](https://github.com/vhung-spec/bokin-suno-tool/releases/latest)**, tải file
@@ -345,6 +354,7 @@ Mã nguồn nằm trong `bokin_suno/`:
 | `dynamics.py` | Nén và limiter đỉnh thật |
 | `analysis.py` | Đo độ to, đỉnh thật, phổ |
 | `audio_io.py` | Đọc/ghi file |
+| `tags.py` | Thông tin trong file kết quả: chỉ tên bài |
 | `app.py`, `static/index.html` | Máy chủ cục bộ và trang của app (màn hình kích hoạt, nút cập nhật) |
 | `desktop.py` | App trên máy: cửa sổ riêng, một bản chạy, tự tắt, cài bản mới khi tắt, `--close` cho bộ cài |
 | `licensing.py` | Kiểm tra key Bokin License (sản phẩm `suno-master`) |
