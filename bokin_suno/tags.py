@@ -5,7 +5,9 @@ link to the song on Suno, cover art, the software, dates) comes along. What the 
 too: the PEAK chunk libsndfile writes into float WAVs (it holds the time of writing), the encoder's name in
 FLAC's comment block, any tag an MP3 encoder writes. Then the file gets one tag, the title:
 
-- WAV: a LIST/INFO chunk with INAM (UTF-8, as libsndfile and ffmpeg write it)
+- WAV: a LIST/INFO chunk with INAM (UTF-8, as libsndfile and ffmpeg write it), and the same title in an "id3 "
+  chunk (an ID3v2.3 tag): Windows Explorer reads INFO in the old ANSI code page, so letters with accents came out
+  garbled there
 - FLAC: a VORBIS_COMMENT block with TITLE= and no vendor string
 - MP3: an ID3v2.3 tag with TIT2 (UTF-16, which Windows Explorer shows)
 
@@ -102,6 +104,8 @@ def _wav(src, out, size: int, title: str) -> None:
         text = title.encode("utf-8") + b"\0"
         inam = b"INAM" + struct.pack("<I", len(text)) + text + b"\0" * (len(text) & 1)
         out.write(b"LIST" + struct.pack("<I", 4 + len(inam)) + b"INFO" + inam)
+        id3 = _id3(title)
+        out.write(b"id3 " + struct.pack("<I", len(id3)) + id3 + b"\0" * (len(id3) & 1))
     end = out.tell()
     out.seek(4)
     out.write(struct.pack("<I", end - 8))
@@ -137,6 +141,14 @@ def _synchsafe(b: bytes) -> int:
     return (b[0] & 0x7F) << 21 | (b[1] & 0x7F) << 14 | (b[2] & 0x7F) << 7 | (b[3] & 0x7F)
 
 
+def _id3(title: str) -> bytes:
+    """An ID3v2.3 tag with one frame, TIT2 (UTF-16 with its byte order mark)."""
+    text = b"\x01\xff\xfe" + title.encode("utf-16-le") + b"\0\0"
+    frame = b"TIT2" + struct.pack(">I", len(text)) + b"\0\0" + text
+    n = len(frame)
+    return b"ID3\x03\x00\x00" + bytes([n >> 21 & 0x7F, n >> 14 & 0x7F, n >> 7 & 0x7F, n & 0x7F]) + frame
+
+
 def _mp3(src, out, size: int, title: str) -> None:
     start, end = 0, size
     while True:  # ID3v2 tags ahead of the sound
@@ -165,9 +177,6 @@ def _mp3(src, out, size: int, title: str) -> None:
     if end <= start:
         raise ValueError("an MP3 file without sound")
     if title:
-        text = b"\x01\xff\xfe" + title.encode("utf-16-le") + b"\0\0"  # UTF-16 with its byte order mark
-        frame = b"TIT2" + struct.pack(">I", len(text)) + b"\0\0" + text
-        n = len(frame)
-        out.write(b"ID3\x03\x00\x00" + bytes([n >> 21 & 0x7F, n >> 14 & 0x7F, n >> 7 & 0x7F, n & 0x7F]) + frame)
+        out.write(_id3(title))
     src.seek(start)
     _copy(src, out, end - start)
